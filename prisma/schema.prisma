@@ -1,0 +1,128 @@
+generator client {
+  provider = "prisma-client-js"
+  output   = "../node_modules/.prisma/client"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id        String   @id @default(uuid())
+  name      String
+  username  String   @unique
+  email     String
+  register  String?
+  role      String
+  className String?
+  subject   String?
+  password  String
+  status    String
+  createdAt DateTime @default(now()) @map("createdat")
+  Exam        Exam[]
+  Notification Notification[]
+  Result      Result[]
+  assignedExams ExamAssignment[]
+  questions  Question[]  // Багш нарын үүсгэсэн даалгавар
+
+  @@map("user")
+}
+
+model Subject {
+  id   String @id @default(uuid())
+  name String @unique
+
+  @@map("subject")
+}
+
+model Exam {
+  id          String   @id @default(uuid())
+  title       String
+  description String?
+  subject     String
+  className   String?
+  duration    Int      @default(30)
+  totalPoints Int      @default(100)
+  examDate    DateTime?
+  examTime    String?
+  createdAt   DateTime @default(now()) @map("createdat")
+  user        User     @relation(fields: [userId], references: [id])
+  userId      String   @map("userid")
+  Result      Result[]
+  questions   Question[] @relation("ExamQuestions")
+  assignedTo  ExamAssignment[]
+  // Add this relation field to fix the error
+  questionItems Question[] @relation("ExamQuestion")
+
+  @@map("exam")
+}
+
+model ExamAssignment {
+  id        String   @id @default(uuid())
+  examId    String   @map("examid")
+  userId    String   @map("userid")
+  status    String   @default("PENDING") // PENDING, COMPLETED, MISSED
+  createdAt DateTime @default(now()) @map("createdat")
+  completedAt DateTime? 
+  exam      Exam     @relation(fields: [examId], references: [id])
+  user      User     @relation(fields: [userId], references: [id])
+
+  @@unique([examId, userId])
+  @@map("exam_assignment")
+}
+
+model Question {
+  id            String   @id @default(uuid())
+  text          String
+  type          String   // select, multiselect, text, number
+  points        Int      @default(1)
+  options       Json?    // [{id: "A", text: "Option A"}, ...]
+  correctAnswer Json?    // "A" or ["A", "B"] or "text answer" or 42
+  
+  // Шинээр нэмсэн талбарууд
+  className     String?  // Анги (жишээ нь: 7, 8, 9)
+  category      String?  // Сэдэв (жишээ нь: Тэгшитгэл, Элемент, Хөдөлгөөн)
+  difficulty    String?  // Түвшин (жишээ нь: Хөнгөн, Хүнд, Дунд, Маш хүнд)
+  isInBank      Boolean  @default(true) // Даалгаварын санд байгаа эсэх
+  
+  // Холбоосууд
+  exams         Exam[]   @relation("ExamQuestions") // Олон шалгалтад ашиглаж болно
+  createdBy     User     @relation(fields: [userId], references: [id]) // Багшийн мэдээлэл
+  userId        String   @map("userid")
+  
+  // Шалгалтад ашиглагдах талбарууд
+  exam          Exam?    @relation("ExamQuestion", fields: [examId], references: [id], onDelete: Cascade)
+  examId        String?  @map("examid")
+  
+  createdAt     DateTime @default(now()) @map("createdat")
+
+  @@map("question")
+}
+
+model Notification {
+  id        String   @id @default(uuid())
+  title     String
+  content   String
+  createdAt DateTime @default(now()) @map("createdat")
+  user      User     @relation(fields: [userId], references: [id])
+  userId    String   @map("userid")
+
+  @@map("notification")
+}
+
+model Result {
+  id          String   @id @default(uuid())
+  score       Float
+  earnedPoints Int?
+  totalPoints  Int?
+  answers     Json?    // Шинээр нэмсэн талбар - хариултуудыг хадгалах
+  submittedAt DateTime @default(now())
+  createdAt   DateTime @default(now()) @map("createdat")
+  user        User     @relation(fields: [userId], references: [id])
+  userId      String   @map("userid")
+  exam        Exam     @relation(fields: [examId], references: [id])
+  examId      String   @map("examid")
+
+  @@map("result")
+}
