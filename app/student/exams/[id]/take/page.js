@@ -1,301 +1,225 @@
-"use client"
+import { getCurrentUser } from "@/lib/auth"
+import { prisma } from "@/lib/prisma"
+import { redirect } from "next/navigation"
+import ExamTakingClient from "./exam-taking-client"
+import Link from "next/link"
 
-import { useState, useEffect } from "react"
-import { useRouter } from "next/navigation"
-
-export default function ExamTakingPage({ params }) {
-  const router = useRouter()
+export default async function TakeExamPage({ params }) {
   const { id } = params
-  const [exam, setExam] = useState(null)
-  const [answers, setAnswers] = useState({})
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState(null)
-  const [submitting, setSubmitting] = useState(false)
-  const [timeLeft, setTimeLeft] = useState(null)
-  const [showConfirmation, setShowConfirmation] = useState(false)
+  const user = await getCurrentUser()
 
-  useEffect(() => {
-    const fetchExam = async () => {
-      try {
-        const response = await fetch(`/api/exams/${id}`)
-        if (!response.ok) {
-          throw new Error("Failed to load exam")
-        }
-        const examData = await response.json()
-
-        // Хуучин төрлүүдийг шинэ төрлүүдэд хөрвүүлэх
-        if (examData.examQuestions) {
-          // Make sure we're working with examQuestions instead of questions
-          const questions = examData.examQuestions.map((eq) => {
-            const question = eq.question || eq
-            if (question.type === "text" || question.type === "number") {
-              return { ...question, type: "fill" }
-            }
-            return question
-          })
-          examData.questions = questions
-        }
-
-        setExam(examData)
-        setTimeLeft(examData.duration * 60) // Convert minutes to seconds
-
-        // Initialize answers object
-        const initialAnswers = {}
-        // Make sure we're using the right property
-        const questions = examData.questions || examData.examQuestions?.map((eq) => eq.question) || []
-        questions.forEach((question) => {
-          initialAnswers[question.id] = null
-        })
-        setAnswers(initialAnswers)
-      } catch (err) {
-        console.error("Error fetching exam:", err)
-        setError(err.message)
-      } finally {
-        setLoading(false)
-      }
-    }
-
-    fetchExam()
-  }, [id])
-
-  // Timer effect
-  useEffect(() => {
-    if (timeLeft === null || timeLeft <= 0) return
-
-    const timer = setInterval(() => {
-      setTimeLeft((prev) => {
-        if (prev <= 1) {
-          clearInterval(timer)
-          handleSubmit()
-          return 0
-        }
-        return prev - 1
-      })
-    }, 1000)
-
-    return () => clearInterval(timer)
-  }, [timeLeft])
-
-  const handleAnswerChange = (questionId, answer) => {
-    setAnswers((prev) => ({
-      ...prev,
-      [questionId]: answer,
-    }))
+  if (!user) {
+    redirect("/login")
   }
 
-  const validateAnswers = () => {
-    // Check if all questions have answers
-    const unansweredQuestions = Object.entries(answers).filter(
-      ([id, answer]) => answer === null || answer === undefined || answer === "",
-    )
-
-    if (unansweredQuestions.length > 0) {
-      return false
-    }
-
-    return true
+  if (user.role !== "student") {
+    redirect("/")
   }
 
-  const confirmSubmit = () => {
-    if (validateAnswers()) {
-      setShowConfirmation(true)
-    } else {
-      alert("Бүх асуултад хариулна уу")
-    }
-  }
-
-  const handleSubmit = async () => {
-    try {
-      setSubmitting(true)
-
-      const response = await fetch(`/api/exams/${id}/submit`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
+  try {
+    // Fetch the exam with questions
+    const exam = await prisma.exam.findUnique({
+      where: { id },
+      include: {
+        user: {
+          select: {
+            id: true,
+            name: true,
+          },
         },
-        body: JSON.stringify({ answers }),
-      })
+        examQuestions: {
+          include: {
+            question: {
+              select: {
+                id: true,
+                text: true,
+                type: true,
+                options: true,
+                points: true,
+                // Don't include correctAnswer for students
+              },
+            },
+          },
+        },
+        assignedTo: {
+          where: {
+            userId: user.id,
+          },
+        },
+      },
+    })
 
-      const result = await response.json()
-
-      if (response.ok) {
-        // Redirect to the result page
-        router.push(`/student/results/${result.id || result.resultId}`)
-      } else {
-        setError(result.error || "Шалгалт явуулахад алдаа гарлаа")
-      }
-    } catch (err) {
-      console.error("Error submitting exam:", err)
-      setError("Шалгалт явуулахад алдаа гарлаа: " + err.message)
-    } finally {
-      setSubmitting(false)
-      setShowConfirmation(false)
+    if (!exam) {
+      return (
+        <div className="p-6">
+          <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded relative" role="alert">
+            <strong className="font-bold">Алдаа!</strong>
+            <span className="block sm:inline"> Шалгалт олдсонгүй.</span>
+          </div>
+          <div className="mt-4">
+            <Link href="/student/exams" className="text-blue-600 hover:text-blue-800">
+              Шалгалтууд руу буцах
+            </Link>
+          </div>
+        </div>
+      )
     }
-  }
 
-  const formatTime = (seconds) => {
-    const minutes = Math.floor(seconds / 60)
-    const remainingSeconds = seconds % 60
-    return `${minutes}:${remainingSeconds.toString().padStart(2, "0")}`
-  }
-
-  if (loading) {
-    return (
-      <div className="p-6 flex justify-center items-center h-screen">
-        <p>Ачаалж байна...</p>
-      </div>
-    )
-  }
-
-  if (error) {
-    return (
-      <div className="p-6">
-        <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded">{error}</div>
-        <div className="mt-4">
-          <button
-            onClick={() => router.push("/student/exams")}
-            className="bg-gray-500 text-white px-4 py-2 rounded hover:bg-gray-600"
-          >
-            Буцах
-          </button>
-        </div>
-      </div>
-    )
-  }
-
-  if (!exam) {
-    return (
-      <div className="p-6">
-        <div className="bg-yellow-100 border border-yellow-400 text-yellow-700 px-4 py-3 rounded">
-          Шалгалт олдсонгүй.
-        </div>
-        <div className="mt-4">
-          <button
-            onClick={() => router.push("/student/exams")}
-            className="bg-gray-500 text-white px-4 py-2 rounded hover:bg-gray-600"
-          >
-            Буцах
-          </button>
-        </div>
-      </div>
-    )
-  }
-
-  // Make sure we're using the right property
-  const questions = exam.questions || exam.examQuestions?.map((eq) => eq.question) || []
-
-  return (
-    <div className="p-6">
-      <div className="max-w-4xl mx-auto">
-        <div className="bg-white rounded-lg shadow-md p-6 mb-6">
-          <div className="flex justify-between items-center mb-6 border-b pb-4">
-            <div>
-              <h1 className="text-2xl font-bold">{exam.title}</h1>
-              <p className="text-gray-600">{exam.subject}</p>
-            </div>
-            <div className="bg-blue-50 text-blue-800 py-2 px-4 rounded-full font-medium">
-              Үлдсэн хугацаа: {formatTime(timeLeft)}
-            </div>
+    // Check if the exam is assigned to this student
+    if (exam.assignedTo.length === 0) {
+      return (
+        <div className="p-6">
+          <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded relative" role="alert">
+            <strong className="font-bold">Алдаа!</strong>
+            <span className="block sm:inline"> Энэ шалгалтыг өгөх эрх байхгүй байна.</span>
           </div>
-
-          <div className="space-y-6">
-            {questions.map((question, index) => (
-              <div key={question.id} className="border rounded-lg p-4">
-                <p className="font-medium mb-3">
-                  {index + 1}. {question.text} ({question.points} оноо)
-                </p>
-
-                {question.type === "select" && question.options && (
-                  <div className="space-y-2 ml-4">
-                    {JSON.parse(JSON.stringify(question.options)).map((option) => (
-                      <div key={option.id} className="flex items-center">
-                        <input
-                          type="radio"
-                          id={`${question.id}-${option.id}`}
-                          name={question.id}
-                          value={option.id}
-                          checked={answers[question.id] === option.id}
-                          onChange={() => handleAnswerChange(question.id, option.id)}
-                          className="mr-2"
-                        />
-                        <label htmlFor={`${question.id}-${option.id}`}>{option.text}</label>
-                      </div>
-                    ))}
-                  </div>
-                )}
-
-                {question.type === "multiselect" && question.options && (
-                  <div className="space-y-2 ml-4">
-                    {JSON.parse(JSON.stringify(question.options)).map((option) => (
-                      <div key={option.id} className="flex items-center">
-                        <input
-                          type="checkbox"
-                          id={`${question.id}-${option.id}`}
-                          name={`${question.id}-${option.id}`}
-                          value={option.id}
-                          checked={Array.isArray(answers[question.id]) && answers[question.id].includes(option.id)}
-                          onChange={() => {
-                            const currentAnswers = Array.isArray(answers[question.id]) ? answers[question.id] : []
-                            const newAnswers = currentAnswers.includes(option.id)
-                              ? currentAnswers.filter((id) => id !== option.id)
-                              : [...currentAnswers, option.id]
-                            handleAnswerChange(question.id, newAnswers)
-                          }}
-                          className="mr-2"
-                        />
-                        <label htmlFor={`${question.id}-${option.id}`}>{option.text}</label>
-                      </div>
-                    ))}
-                  </div>
-                )}
-
-                {question.type === "fill" && (
-                  <div className="ml-4">
-                    <input
-                      type="text"
-                      value={answers[question.id] || ""}
-                      onChange={(e) => handleAnswerChange(question.id, e.target.value)}
-                      placeholder="Хариултаа энд бичнэ үү"
-                      className="w-full p-2 border rounded"
-                    />
-                  </div>
-                )}
-              </div>
-            ))}
+          <div className="mt-4">
+            <Link href="/student/exams" className="text-blue-600 hover:text-blue-800">
+              Шалгалтууд руу буцах
+            </Link>
           </div>
+        </div>
+      )
+    }
 
-          <div className="mt-6 flex justify-end">
-            <button
-              onClick={confirmSubmit}
-              disabled={submitting}
-              className="bg-blue-500 text-white px-6 py-2 rounded hover:bg-blue-600 disabled:opacity-50"
+    // Check if the student has already taken this exam
+    const existingResult = await prisma.result.findFirst({
+      where: {
+        examId: id,
+        userId: user.id,
+      },
+    })
+
+    if (existingResult) {
+      return (
+        <div className="p-6">
+          <div
+            className="bg-yellow-100 border border-yellow-400 text-yellow-700 px-4 py-3 rounded relative"
+            role="alert"
+          >
+            <strong className="font-bold">Анхааруулга!</strong>
+            <span className="block sm:inline"> Та энэ шалгалтыг өмнө нь өгсөн байна.</span>
+          </div>
+          <div className="mt-4">
+            <Link href={`/student/results/${existingResult.id}`} className="text-blue-600 hover:text-blue-800">
+              Дүн харах
+            </Link>
+          </div>
+        </div>
+      )
+    }
+
+    // Check if the exam is active
+    const now = new Date()
+    let examStartTime = null
+    let examEndTime = null
+    let isActive = true
+
+    if (exam.examDate) {
+      examStartTime = new Date(exam.examDate)
+      if (exam.examTime) {
+        const [hours, minutes] = exam.examTime.split(":").map(Number)
+        examStartTime.setHours(hours, minutes, 0)
+      }
+
+      examEndTime = new Date(examStartTime)
+      examEndTime.setMinutes(examEndTime.getMinutes() + (exam.duration || 60))
+
+      if (now < examStartTime) {
+        isActive = false
+        return (
+          <div className="p-6">
+            <div
+              className="bg-yellow-100 border border-yellow-400 text-yellow-700 px-4 py-3 rounded relative"
+              role="alert"
             >
-              {submitting ? "Илгээж байна..." : "Шалгалт дуусгах"}
-            </button>
-          </div>
-        </div>
-      </div>
-
-      {/* Баталгаажуулах цонх */}
-      {showConfirmation && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-white p-6 rounded-lg shadow-lg max-w-md w-full">
-            <h3 className="text-lg font-semibold mb-4">Шалгалт дуусгах уу?</h3>
-            <p className="mb-4">Таны хариултууд илгээгдэх болно. Үргэлжлүүлэх үү?</p>
-            <div className="flex justify-end space-x-3">
-              <button
-                onClick={() => setShowConfirmation(false)}
-                className="px-4 py-2 bg-gray-200 rounded hover:bg-gray-300"
-              >
-                Цуцлах
-              </button>
-              <button onClick={handleSubmit} className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600">
-                Тийм, дуусгах
-              </button>
+              <strong className="font-bold">Анхааруулга!</strong>
+              <span className="block sm:inline"> Шалгалт эхлээгүй байна.</span>
+            </div>
+            <div className="mt-4">
+              <Link href="/student/exams" className="text-blue-600 hover:text-blue-800">
+                Шалгалтууд руу буцах
+              </Link>
             </div>
           </div>
+        )
+      }
+
+      if (now > examEndTime) {
+        isActive = false
+        return (
+          <div className="p-6">
+            <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded relative" role="alert">
+              <strong className="font-bold">Анхааруулга!</strong>
+              <span className="block sm:inline"> Шалгалтын хугацаа дууссан байна.</span>
+            </div>
+            <div className="mt-4">
+              <Link href="/student/exams" className="text-blue-600 hover:text-blue-800">
+                Шалгалтууд руу буцах
+              </Link>
+            </div>
+          </div>
+        )
+      }
+    }
+
+    // Make sure examQuestions is an array and has questions
+    if (!Array.isArray(exam.examQuestions) || exam.examQuestions.length === 0) {
+      return (
+        <div className="p-6">
+          <div
+            className="bg-yellow-100 border border-yellow-400 text-yellow-700 px-4 py-3 rounded relative"
+            role="alert"
+          >
+            <strong className="font-bold">Анхааруулга!</strong>
+            <span className="block sm:inline"> Энэ шалгалтад асуулт байхгүй байна.</span>
+          </div>
+          <div className="mt-4">
+            <Link href="/student/exams" className="text-blue-600 hover:text-blue-800">
+              Шалгалтууд руу буцах
+            </Link>
+          </div>
         </div>
-      )}
-    </div>
-  )
+      )
+    }
+
+    // Prepare questions for the client
+    const questions = exam.examQuestions.map((eq) => ({
+      id: eq.question.id,
+      text: eq.question.text,
+      type: eq.question.type,
+      options: eq.question.options,
+      points: eq.question.points,
+    }))
+
+    return (
+      <ExamTakingClient
+        exam={{
+          id: exam.id,
+          title: exam.title,
+          duration: exam.duration,
+          totalPoints: exam.totalPoints,
+          subject: exam.subject,
+          className: exam.className,
+          questions: questions,
+        }}
+        examEndTime={examEndTime}
+      />
+    )
+  } catch (error) {
+    console.error("Error fetching exam for taking:", error)
+    return (
+      <div className="p-6">
+        <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded relative" role="alert">
+          <strong className="font-bold">Алдаа!</strong>
+          <span className="block sm:inline"> Шалгалтын мэдээлэл татахад алдаа гарлаа: {error.message}</span>
+        </div>
+        <div className="mt-4">
+          <Link href="/student/exams" className="text-blue-600 hover:text-blue-800">
+            Шалгалтууд руу буцах
+          </Link>
+        </div>
+      </div>
+    )
+  }
 }

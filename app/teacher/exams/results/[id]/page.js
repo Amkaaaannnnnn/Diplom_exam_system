@@ -16,15 +16,23 @@ export default function ExamResults() {
   const [results, setResults] = useState([])
   const [searchTerm, setSearchTerm] = useState("")
   const [filterGrade, setFilterGrade] = useState("all")
+  const [debugInfo, setDebugInfo] = useState(null)
 
   useEffect(() => {
     async function fetchData() {
       try {
         setLoading(true)
         setError(null)
+        setDebugInfo(null)
+
+        console.log("Fetching exam with ID:", id)
 
         // Шалгалтын мэдээллийг авах
-        const examResponse = await fetch(`/api/exams/${id}`)
+        const examResponse = await fetch(`/api/exams/${id}`, {
+          credentials: "include", // Make sure cookies are sent with the request
+        })
+
+        console.log("Exam response status:", examResponse.status)
 
         if (!examResponse.ok) {
           if (examResponse.status === 401) {
@@ -32,14 +40,31 @@ export default function ExamResults() {
             return
           }
 
-          const examError = await examResponse.json()
-          throw new Error(examError.error || `Шалгалтын мэдээлэл татахад алдаа гарлаа: ${examResponse.status}`)
+          const errorText = await examResponse.text()
+          console.error("Error response text:", errorText)
+
+          let errorMessage = "Шалгалтын мэдээлэл татахад алдаа гарлаа"
+          try {
+            const errorData = JSON.parse(errorText)
+            errorMessage = errorData.error || errorMessage
+          } catch (e) {
+            // If parsing fails, use the default error message
+          }
+
+          throw new Error(errorMessage)
         }
 
         const examData = await examResponse.json()
+        console.log("Exam data:", examData)
+        setExam(examData)
 
         // Шалгалтын дүнг авах
-        const resultsResponse = await fetch(`/api/exams/${id}/results`)
+        console.log("Fetching exam results")
+        const resultsResponse = await fetch(`/api/exams/${id}/results`, {
+          credentials: "include", // Make sure cookies are sent with the request
+        })
+
+        console.log("Results response status:", resultsResponse.status)
 
         if (!resultsResponse.ok) {
           // If unauthorized, redirect to login
@@ -48,13 +73,22 @@ export default function ExamResults() {
             return
           }
 
-          const resultsError = await resultsResponse.json()
-          throw new Error(resultsError.error || `Шалгалтын дүн татахад алдаа гарлаа: ${resultsResponse.status}`)
+          const errorText = await resultsResponse.text()
+          console.error("Error response text:", errorText)
+
+          let errorMessage = "Шалгалтын дүн татахад алдаа гарлаа"
+          try {
+            const errorData = JSON.parse(errorText)
+            errorMessage = errorData.error || errorMessage
+          } catch (e) {
+            // If parsing fails, use the default error message
+          }
+
+          throw new Error(errorMessage)
         }
 
         const resultsData = await resultsResponse.json()
-
-        setExam(examData)
+        console.log("Results data:", resultsData)
         setResults(resultsData)
       } catch (error) {
         console.error("Error fetching data:", error)
@@ -78,9 +112,11 @@ export default function ExamResults() {
 
   // Хайлт, шүүлтийн үр дүнг авах
   const filteredResults = results.filter((result) => {
+    if (!result.user) return false
+
     const matchesSearch =
-      result.user.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      result.user.username.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      result.user.name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      result.user.username?.toLowerCase().includes(searchTerm.toLowerCase()) ||
       (result.user.className && result.user.className.toLowerCase().includes(searchTerm.toLowerCase()))
 
     const grade = getGrade(result.score)
@@ -173,6 +209,12 @@ export default function ExamResults() {
           <strong className="font-bold">Алдаа!</strong>
           <span className="block sm:inline"> {error}</span>
         </div>
+        {debugInfo && (
+          <div className="mt-4 p-4 bg-gray-100 rounded overflow-auto">
+            <h3 className="font-bold mb-2">Debug Info:</h3>
+            <pre className="text-xs">{JSON.stringify(debugInfo, null, 2)}</pre>
+          </div>
+        )}
         <div className="mt-4">
           <Link href="/teacher/exams" className="text-blue-600 hover:text-blue-800">
             Шалгалтууд руу буцах
@@ -189,6 +231,12 @@ export default function ExamResults() {
           <strong className="font-bold">Анхааруулга!</strong>
           <span className="block sm:inline"> Шалгалтын мэдээлэл олдсонгүй.</span>
         </div>
+        {debugInfo && (
+          <div className="mt-4 p-4 bg-gray-100 rounded overflow-auto">
+            <h3 className="font-bold mb-2">Debug Info:</h3>
+            <pre className="text-xs">{JSON.stringify(debugInfo, null, 2)}</pre>
+          </div>
+        )}
         <div className="mt-4">
           <Link href="/teacher/exams" className="text-blue-600 hover:text-blue-800">
             Шалгалтууд руу буцах

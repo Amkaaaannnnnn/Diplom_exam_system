@@ -1,9 +1,9 @@
 import { redirect } from "next/navigation"
-import { getCurrentUser } from "@/lib/auth"
+import { getServerUser } from "@/lib/auth-server"
 import AdminSidebar from "@/components/admin-sidebar"
 
 export default async function AdminLayout({ children }) {
-  const user = await getCurrentUser()
+  const user = await getServerUser()
 
   if (!user) {
     redirect("/login")

@@ -200,7 +200,7 @@ export default function QuestionBankClient({ questions, uniqueClasses, uniqueCat
                       <div className="text-sm text-gray-900">{question.category || "—"}</div>
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap">
-                      <div className="text-sm text-gray-900">{getQuestionTypeName(question.type)}</div>
+                      <div className="text-sm text-gray-900">{question.type}</div>
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap">
                       <div className="text-sm text-gray-900">{question.className || "—"}</div>

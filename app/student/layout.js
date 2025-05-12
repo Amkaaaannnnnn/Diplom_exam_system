@@ -1,9 +1,9 @@
 import { redirect } from "next/navigation"
-import { getCurrentUser } from "@/lib/auth"
+import { getServerUser } from "@/lib/auth-server"
 import Sidebar from "@/components/sidebar"
 
 export default async function StudentLayout({ children }) {
-  const user = await getCurrentUser()
+  const user = await getServerUser()
 
   if (!user) {
     redirect("/login")

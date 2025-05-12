@@ -1,6 +1,6 @@
 "use client"
 
-import { type FormEvent, useState } from "react"
+import { FormEvent, useState } from "react"
 import { useRouter } from "next/navigation"
 import Image from "next/image"
 import Link from "next/link"
@@ -15,7 +15,7 @@ export default function LoginPage() {
   const [rememberMe, setRememberMe] = useState(false)
   const router = useRouter()
 
-  const handleSubmit = async (e: FormEvent) => {
+  const handleSubmit = async (e) => {
     e.preventDefault()
     setError("")
     setIsLoading(true)
@@ -60,7 +60,7 @@ export default function LoginPage() {
       } else {
         router.push("/")
       }
-    } catch (error: any) {
+    } catch (error) {
       console.error("Login error:", error)
       setError(error.message || "Login failed")
     } finally {

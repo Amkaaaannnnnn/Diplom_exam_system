@@ -1,217 +1,154 @@
-"use client"
-
-import { useState, useEffect } from "react"
-import { Download, Filter, Search } from "lucide-react"
+import { getServerUser } from "@/lib/auth-server"
+import { prisma } from "@/lib/prisma"
+import { redirect } from "next/navigation"
 import Link from "next/link"
+import { Search, Filter, Users } from "lucide-react"
 
-export default function CompletedExams() {
-  const [exams, setExams] = useState([])
-  const [loading, setLoading] = useState(true)
-  const [searchTerm, setSearchTerm] = useState("")
-  const [subjectFilter, setSubjectFilter] = useState("Бүгд")
-  const [gradeFilter, setGradeFilter] = useState("Бүгд")
+export default async function TeacherCompletedExamsPage() {
+  const user = await getServerUser()
 
-  useEffect(() => {
-    async function fetchExams() {
-      try {
-        const response = await fetch("/api/exams/completed?role=teacher")
-        if (response.ok) {
-          const data = await response.json()
-          setExams(data)
-        } else {
-          console.error("Failed to fetch exams")
-        }
-      } catch (error) {
-        console.error("Error fetching exams:", error)
-      } finally {
-        setLoading(false)
-      }
-    }
-
-    fetchExams()
-  }, [])
-
-  // Get unique subjects and grades for filters
-  const subjects = ["Бүгд", ...new Set(exams.map((exam) => exam.subject).filter(Boolean))]
-  const grades = ["Бүгд", ...new Set(exams.map((exam) => exam.className).filter(Boolean))]
-
-  // Filter exams based on search term and filters
-  const filteredExams = exams.filter((exam) => {
-    const matchesSearch =
-      exam.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      exam.subject.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      (exam.description && exam.description.toLowerCase().includes(searchTerm.toLowerCase()))
-    const matchesSubject = subjectFilter === "Бүгд" || exam.subject === subjectFilter
-    const matchesGrade = gradeFilter === "Бүгд" || exam.className === gradeFilter
-
-    return matchesSearch && matchesSubject && matchesGrade
-  })
-
-  const handleExportResults = () => {
-    alert("Шалгалтын дүнг татаж авах функц")
+  if (!user) {
+    redirect("/login")
   }
+
+  if (user.role !== "teacher") {
+    redirect("/login")
+  }
+
+  // Get current date
+  const now = new Date()
+
+  // Fetch completed exams created by this teacher
+  const completedExams = await prisma.exam.findMany({
+    where: {
+      userId: user.id,
+      examDate: {
+        lt: now,
+      },
+    },
+    orderBy: {
+      examDate: "desc",
+    },
+    include: {
+      assignedTo: {
+        include: {
+          user: {
+            select: {
+              id: true,
+              name: true,
+              username: true,
+            },
+          },
+        },
+      },
+      Result: true,
+    },
+  })
 
   return (
     <div className="p-6">
       <div className="flex justify-between items-center mb-6">
         <h1 className="text-2xl font-bold">Авсан шалгалтууд</h1>
-        <Link
-          href="/teacher/exams/new"
-          className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-md flex items-center gap-2"
-        >
-          Шалгалт үүсгэх
-        </Link>
       </div>
 
-      {loading ? (
-        <div className="flex justify-center items-center h-64">
-          <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-blue-500"></div>
-        </div>
-      ) : (
-        <>
-          <div className="flex flex-col md:flex-row gap-4 mb-6">
-            <div className="flex items-center gap-2">
-              <select
-                value={subjectFilter}
-                onChange={(e) => setSubjectFilter(e.target.value)}
-                className="border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
-              >
-                {subjects.map((subject) => (
-                  <option key={subject} value={subject}>
-                    {subject}
-                  </option>
-                ))}
-              </select>
-              <select
-                value={gradeFilter}
-                onChange={(e) => setGradeFilter(e.target.value)}
-                className="border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
-              >
-                {grades.map((grade) => (
-                  <option key={grade} value={grade}>
-                    {grade}
-                  </option>
-                ))}
-              </select>
-              <button className="border border-gray-300 rounded-md p-2 hover:bg-gray-100">
-                <Filter size={20} />
-              </button>
-            </div>
-            <div className="relative flex-grow">
+      <div className="bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden">
+        <div className="p-4 border-b border-gray-200 flex justify-between items-center">
+          <h2 className="text-lg font-medium">Авсан шалгалтууд ({completedExams.length})</h2>
+          <div className="flex space-x-2">
+            <div className="relative">
               <input
                 type="text"
                 placeholder="Хайх..."
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-                className="border border-gray-300 rounded-md pl-10 pr-4 py-2 w-full focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className="pl-9 pr-4 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
               />
-              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" size={18} />
+              <Search className="absolute left-3 top-2.5 text-gray-400" size={18} />
             </div>
-            <button
-              onClick={handleExportResults}
-              className="flex items-center gap-2 border border-gray-300 rounded-md px-4 py-2 hover:bg-gray-100"
-            >
-              <Download size={18} />
-              <span>Татаж авах</span>
+            <button className="p-2 border border-gray-300 rounded-md hover:bg-gray-50">
+              <Filter size={18} className="text-gray-500" />
             </button>
           </div>
+        </div>
 
-          <div className="overflow-x-auto bg-white rounded-lg shadow">
+        {completedExams.length === 0 ? (
+          <div className="p-8 text-center">
+            <p className="text-gray-500 mb-4">Авсан шалгалт байхгүй байна.</p>
+          </div>
+        ) : (
+          <div className="overflow-x-auto">
             <table className="min-w-full divide-y divide-gray-200">
               <thead className="bg-gray-50">
                 <tr>
-                  <th
-                    scope="col"
-                    className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider"
-                  >
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                     Шалгалтын нэр
                   </th>
-                  <th
-                    scope="col"
-                    className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider"
-                  >
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                     Хичээл
                   </th>
-                  <th
-                    scope="col"
-                    className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider"
-                  >
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                     Анги
                   </th>
-                  <th
-                    scope="col"
-                    className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider"
-                  >
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                     Огноо
                   </th>
-                  <th
-                    scope="col"
-                    className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider"
-                  >
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                     Сурагчид
                   </th>
-                  <th
-                    scope="col"
-                    className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider"
-                  >
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                     Дундаж оноо
                   </th>
-                  <th
-                    scope="col"
-                    className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider"
-                  >
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                     Дэлгэрэнгүй
                   </th>
                 </tr>
               </thead>
               <tbody className="bg-white divide-y divide-gray-200">
-                {filteredExams.length === 0 ? (
-                  <tr>
-                    <td colSpan="7" className="px-6 py-4 text-center text-gray-500">
-                      Шалгалт олдсонгүй
-                    </td>
-                  </tr>
-                ) : (
-                  filteredExams.map((exam) => (
+                {completedExams.map((exam) => {
+                  // Calculate how many students have taken the exam
+                  const totalAssigned = exam.assignedTo.length
+                  const totalCompleted = exam.Result.length
+
+                  // Calculate average score
+                  const averageScore =
+                    totalCompleted > 0
+                      ? Math.round(exam.Result.reduce((sum, result) => sum + result.score, 0) / totalCompleted)
+                      : 0
+
+                  return (
                     <tr key={exam.id} className="hover:bg-gray-50">
                       <td className="px-6 py-4 whitespace-nowrap">
-                        <div className="text-sm font-medium text-gray-900">{exam.title}</div>
+                        <Link href={`/teacher/exams/${exam.id}`} className="text-blue-600 hover:text-blue-800">
+                          {exam.title}
+                        </Link>
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap">{exam.subject}</td>
+                      <td className="px-6 py-4 whitespace-nowrap">{exam.className}</td>
+                      <td className="px-6 py-4 whitespace-nowrap">
+                        {exam.examDate ? new Date(exam.examDate).toISOString().split("T")[0] : "-"}
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap">
-                        <div className="text-sm text-gray-900">{exam.subject}</div>
+                        {totalCompleted} / {totalAssigned} (
+                        {totalAssigned > 0 ? Math.round((totalCompleted / totalAssigned) * 100) : 0}%)
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap">
-                        <div className="text-sm text-gray-900">{exam.className}</div>
+                        {totalCompleted > 0 ? `${averageScore} / ${exam.totalPoints}` : "-"}
                       </td>
-                      <td className="px-6 py-4 whitespace-nowrap">
-                        <div className="text-sm text-gray-900">
-                          {exam.examDate ? new Date(exam.examDate).toLocaleDateString("mn-MN") : "Тодорхойгүй"}
-                        </div>
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap">
-                        <div className="text-sm text-gray-900">
-                          {exam.completedCount}/{exam.totalStudents}
-                        </div>
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap">
-                        <div className="text-sm text-gray-900">{exam.averageScore}</div>
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
                         <Link
                           href={`/teacher/exams/results/${exam.id}`}
-                          className="bg-blue-600 hover:bg-blue-700 text-white px-3 py-1 rounded-md text-sm"
+                          className="bg-blue-500 hover:bg-blue-600 text-white px-3 py-1 rounded-md flex items-center w-fit"
                         >
+                          <Users size={16} className="mr-1" />
                           Харах
                         </Link>
                       </td>
                     </tr>
-                  ))
-                )}
+                  )
+                })}
               </tbody>
             </table>
           </div>
-        </>
-      )}
+        )}
+      </div>
     </div>
   )
 }

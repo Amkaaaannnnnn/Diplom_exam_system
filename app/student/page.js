@@ -5,12 +5,14 @@ import Link from "next/link"
 import { Card } from "@/components/ui/card"
 import { Progress } from "@/components/ui/progress"
 import { Badge } from "@/components/ui/badge"
+import { AlertTriangle } from "lucide-react"
 
 export default function StudentDashboard() {
   const [user, setUser] = useState(null)
   const [exams, setExams] = useState([])
   const [results, setResults] = useState([])
   const [loading, setLoading] = useState(true)
+  const [error, setError] = useState(null)
   const [stats, setStats] = useState({
     totalExams: 0,
     avgScore: 0,
@@ -21,25 +23,51 @@ export default function StudentDashboard() {
   useEffect(() => {
     const fetchData = async () => {
       try {
+        setLoading(true)
+        setError(null)
+
         // Хэрэглэгчийн мэдээлэл авах
         const userRes = await fetch("/api/me")
+        if (!userRes.ok) {
+          throw new Error(`Failed to fetch user: ${userRes.status}`)
+        }
         const userData = await userRes.json()
 
-        // Шалгалтын мэдээлэл авах - subjectType талбарыг хасав
-        const examsRes = await fetch("/api/exams")
-        const examsData = await examsRes.json()
+        // Шалгалтын мэдээлэл авах
+        let examsData = []
+        try {
+          const examsRes = await fetch("/api/exams")
+          if (examsRes.ok) {
+            examsData = await examsRes.json()
+          } else {
+            console.error(`Failed to fetch exams: ${examsRes.status}`)
+          }
+        } catch (examsError) {
+          console.error("Error fetching exams:", examsError)
+        }
 
         // Дүнгийн мэдээлэл авах
-        const resultsRes = await fetch("/api/results")
-        const resultsData = await resultsRes.json()
+        let resultsData = []
+        try {
+          const resultsRes = await fetch("/api/results")
+          if (resultsRes.ok) {
+            resultsData = await resultsRes.json()
+          } else {
+            console.error(`Failed to fetch results: ${resultsRes.status}`)
+          }
+        } catch (resultsError) {
+          console.error("Error fetching results:", resultsError)
+        }
 
-        setUser(userData)
-        setExams(examsData)
-        setResults(resultsData)
+        setUser(userData.user || userData)
+        // Ensure exams is always an array
+        setExams(Array.isArray(examsData) ? examsData : [])
+        // Ensure results is always an array
+        setResults(Array.isArray(resultsData) ? resultsData : [])
 
         // Статистик тооцоолох
         if (resultsData.length > 0) {
-          const scores = resultsData.map((r) => r.score)
+          const scores = resultsData.map((r) => r.score || 0)
           setStats({
             totalExams: resultsData.length,
             avgScore: scores.reduce((a, b) => a + b, 0) / scores.length,
@@ -51,6 +79,7 @@ export default function StudentDashboard() {
         setLoading(false)
       } catch (error) {
         console.error("Error fetching data:", error)
+        setError(error.message)
         setLoading(false)
       }
     }
@@ -80,6 +109,28 @@ export default function StudentDashboard() {
     return <div className="p-8">Ачааллаж байна...</div>
   }
 
+  if (error) {
+    return (
+      <div className="p-8">
+        <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded">Алдаа гарлаа: {error}</div>
+      </div>
+    )
+  }
+
+  // Get unique subjects from exams
+  const subjects = []
+  if (exams && Array.isArray(exams)) {
+    // Use a Set to get unique subjects
+    const subjectSet = new Set()
+    exams.forEach((exam) => {
+      if (exam && exam.subject) {
+        subjectSet.add(exam.subject)
+      }
+    })
+    // Convert Set to Array
+    subjects.push(...subjectSet)
+  }
+
   return (
     <div className="p-6">
       <h1 className="text-2xl font-bold mb-6">Дүнгийн тайлан</h1>
@@ -107,12 +158,22 @@ export default function StudentDashboard() {
         </Card>
       </div>
 
+      {/* Error message for results */}
+      {results.length === 0 && (
+        <div className="bg-yellow-100 border border-yellow-400 text-yellow-700 px-4 py-3 rounded mb-6">
+          <div className="flex items-center">
+            <AlertTriangle className="h-5 w-5 mr-2" />
+            <span>Дүнгийн мэдээлэл олдсонгүй. Та шалгалт өгөөгүй байж болно.</span>
+          </div>
+        </div>
+      )}
+
       {/* Хайлтын хэсэг */}
       <div className="flex flex-col md:flex-row gap-4 mb-6">
         <select className="border rounded p-2">
           <option value="">Бүгд</option>
           {/* Хичээлүүдийг давталтаар харуулах */}
-          {[...new Set(exams.map((exam) => exam.subject))].map((subject) => (
+          {subjects.map((subject) => (
             <option key={subject} value={subject}>
               {subject}
             </option>
@@ -136,43 +197,51 @@ export default function StudentDashboard() {
             </tr>
           </thead>
           <tbody>
-            {results.map((result) => {
-              const exam = exams.find((e) => e.id === result.examId) || {}
-              const scorePercent = Math.round(result.score)
-              const grade = getGrade(scorePercent)
+            {results.length === 0 ? (
+              <tr>
+                <td colSpan="8" className="p-3 text-center text-gray-500">
+                  Дүн олдсонгүй
+                </td>
+              </tr>
+            ) : (
+              results.map((result) => {
+                const exam = exams.find((e) => e.id === result.examId) || result.exam || {}
+                const scorePercent = Math.round(result.score || 0)
+                const grade = getGrade(scorePercent)
 
-              return (
-                <tr key={result.id} className="border-b hover:bg-gray-50">
-                  <td className="p-3">{exam.subject || "Тодорхойгүй"}</td>
-                  <td className="p-3">{exam.title || "Тодорхойгүй"}</td>
-                  <td className="p-3">{exam.category || "Тодорхойгүй"}</td>
-                  <td className="p-3">
-                    {exam.examDate ? new Date(exam.examDate).toLocaleDateString() : "Тодорхойгүй"}
-                  </td>
-                  <td className="p-3">
-                    {result.earnedPoints || 0}/{exam.totalPoints || 0}
-                  </td>
-                  <td className="p-3">
-                    <div className="flex items-center gap-2">
-                      <Progress
-                        value={scorePercent}
-                        className="w-24 h-2"
-                        indicatorClassName={getScoreColor(scorePercent)}
-                      />
-                      <span>{scorePercent}%</span>
-                    </div>
-                  </td>
-                  <td className="p-3">
-                    <Badge variant={scorePercent >= 60 ? "default" : "destructive"}>{grade}</Badge>
-                  </td>
-                  <td className="p-3">
-                    <Link href={`/student/results/${result.id}`} className="text-blue-500 hover:underline">
-                      <button className="bg-blue-500 text-white px-3 py-1 rounded hover:bg-blue-600">Харах</button>
-                    </Link>
-                  </td>
-                </tr>
-              )
-            })}
+                return (
+                  <tr key={result.id} className="border-b hover:bg-gray-50">
+                    <td className="p-3">{exam.subject || "Тодорхойгүй"}</td>
+                    <td className="p-3">{exam.title || "Тодорхойгүй"}</td>
+                    <td className="p-3">{exam.subjectType || "Тодорхойгүй"}</td>
+                    <td className="p-3">
+                      {exam.examDate ? new Date(exam.examDate).toLocaleDateString() : "Тодорхойгүй"}
+                    </td>
+                    <td className="p-3">
+                      {result.earnedPoints || 0}/{exam.totalPoints || 0}
+                    </td>
+                    <td className="p-3">
+                      <div className="flex items-center gap-2">
+                        <Progress
+                          value={scorePercent}
+                          className="w-24 h-2"
+                          indicatorClassName={getScoreColor(scorePercent)}
+                        />
+                        <span>{scorePercent}%</span>
+                      </div>
+                    </td>
+                    <td className="p-3">
+                      <Badge variant={scorePercent >= 60 ? "default" : "destructive"}>{grade}</Badge>
+                    </td>
+                    <td className="p-3">
+                      <Link href={`/student/results/${result.id}`} className="text-blue-500 hover:underline">
+                        <button className="bg-blue-500 text-white px-3 py-1 rounded hover:bg-blue-600">Харах</button>
+                      </Link>
+                    </td>
+                  </tr>
+                )
+              })
+            )}
           </tbody>
         </table>
       </div>

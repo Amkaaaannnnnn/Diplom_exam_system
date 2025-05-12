@@ -1,73 +1,141 @@
-import { getCurrentUser } from "@/lib/auth"
-import { prisma } from "@/lib/prisma"
-import { redirect } from "next/navigation"
+"use client"
+
+import { useState, useEffect } from "react"
+import { useParams, useRouter } from "next/navigation"
 import Link from "next/link"
-import { ArrowLeft, Pencil, Trash2, Users } from "lucide-react"
+import { ArrowLeft, Pencil, Trash2 } from "lucide-react"
 
-export default async function ViewExam({ params }) {
-  const user = await getCurrentUser()
+export default function ExamDetailPage() {
+  const params = useParams()
+  const router = useRouter()
+  const { id } = params
 
-  if (!user) {
-    redirect("/login")
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState(null)
+  const [exam, setExam] = useState(null)
+
+  useEffect(() => {
+    async function fetchExam() {
+      try {
+        setLoading(true)
+        const response = await fetch(`/api/exams/${id}`, {
+          credentials: "include",
+        })
+
+        if (!response.ok) {
+          if (response.status === 401) {
+            router.push("/login")
+            return
+          }
+          throw new Error("Шалгалтын мэдээлэл татахад алдаа гарлаа")
+        }
+
+        const examData = await response.json()
+        setExam(examData)
+
+        // Check if the exam has already ended
+        const isExamEnded = checkIfExamEnded(examData)
+        if (isExamEnded) {
+          // Redirect to completed exams
+          router.push("/teacher/exams/completed")
+          return
+        }
+
+        // Check if the exam hasn't started yet
+        const isExamUpcoming = checkIfExamUpcoming(examData)
+        if (isExamUpcoming) {
+          // Redirect to upcoming exams
+          router.push("/teacher/exams/upcoming")
+          return
+        }
+      } catch (error) {
+        console.error("Error fetching exam:", error)
+        setError(error.message)
+      } finally {
+        setLoading(false)
+      }
+    }
+
+    fetchExam()
+  }, [id, router])
+
+  // Function to check if the exam has already ended
+  const checkIfExamEnded = (exam) => {
+    if (!exam || !exam.examDate) return false
+
+    const examDate = new Date(exam.examDate)
+
+    // If exam time is specified, add it to the date
+    if (exam.examTime) {
+      const [hours, minutes] = exam.examTime.split(":").map(Number)
+      examDate.setHours(hours, minutes, 0)
+    }
+
+    // Add the duration to get the end time
+    const examEndTime = new Date(examDate)
+    examEndTime.setMinutes(examEndTime.getMinutes() + (exam.duration || 0))
+
+    // Check if current time is after the end time
+    return new Date() > examEndTime
   }
 
-  if (user.role !== "teacher") {
-    redirect("/login")
+  // Function to check if the exam hasn't started yet
+  const checkIfExamUpcoming = (exam) => {
+    if (!exam || !exam.examDate) return false
+
+    const examDate = new Date(exam.examDate)
+
+    // If exam time is specified, add it to the date
+    if (exam.examTime) {
+      const [hours, minutes] = exam.examTime.split(":").map(Number)
+      examDate.setHours(hours, minutes, 0)
+    }
+
+    // Check if current time is before the start time
+    return new Date() < examDate
   }
 
-  const examId = params.id
+  if (loading) {
+    return (
+      <div className="flex justify-center items-center h-screen">
+        <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-blue-500"></div>
+      </div>
+    )
+  }
 
-  const exam = await prisma.exam.findUnique({
-    where: {
-      id: examId,
-      userId: user.id,
-    },
-    include: {
-      examQuestions: {
-        include: {
-          question: true,
-        },
-      },
-      assignedTo: {
-        include: {
-          user: {
-            select: {
-              id: true,
-              name: true,
-              username: true,
-            },
-          },
-        },
-      },
-    },
-  })
+  if (error) {
+    return (
+      <div className="p-6">
+        <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded relative" role="alert">
+          <strong className="font-bold">Алдаа!</strong>
+          <span className="block sm:inline"> {error}</span>
+        </div>
+        <div className="mt-4">
+          <Link href="/teacher/exams" className="text-blue-600 hover:text-blue-800">
+            Шалгалтууд руу буцах
+          </Link>
+        </div>
+      </div>
+    )
+  }
 
   if (!exam) {
-    redirect("/teacher/exams")
+    return (
+      <div className="p-6">
+        <div className="bg-yellow-100 border border-yellow-400 text-yellow-700 px-4 py-3 rounded relative" role="alert">
+          <strong className="font-bold">Анхааруулга!</strong>
+          <span className="block sm:inline"> Шалгалтын мэдээлэл олдсонгүй.</span>
+        </div>
+        <div className="mt-4">
+          <Link href="/teacher/exams" className="text-blue-600 hover:text-blue-800">
+            Шалгалтууд руу буцах
+          </Link>
+        </div>
+      </div>
+    )
   }
 
-  const questions = exam.examQuestions.map((eq) => eq.question)
-
-  let results = []
-  try {
-    results = await prisma.result.findMany({
-      where: {
-        examId: examId,
-      },
-      include: {
-        user: {
-          select: {
-            id: true,
-            name: true,
-            username: true,
-          },
-        },
-      },
-    })
-  } catch (error) {
-    console.error("Шалгалтын дүнгийн мэдээллийг татахад алдаа гарлаа:", error)
-  }
-
+  // Render exam details
   return (
     <div className="p-6">
       <div className="flex justify-between items-center mb-6">
@@ -92,7 +160,7 @@ export default async function ViewExam({ params }) {
             <Trash2 size={18} className="mr-1" />
             Устгах
           </Link>
-          {results.length > 0 && (
+          {/* {results.length > 0 && (
             <Link
               href={`/teacher/exams/results/${exam.id}`}
               className="bg-green-500 hover:bg-green-600 text-white px-4 py-2 rounded-md flex items-center"
@@ -100,7 +168,7 @@ export default async function ViewExam({ params }) {
               <Users size={18} className="mr-1" />
               Дүнгүүд
             </Link>
-          )}
+          )} */}
         </div>
       </div>
 
@@ -149,7 +217,7 @@ export default async function ViewExam({ params }) {
           <div className="space-y-2">
             <div>
               <span className="text-gray-500">Даалгаврын тоо:</span>{" "}
-              <span className="font-medium">{questions.length}</span>
+              <span className="font-medium">{exam.questions.length}</span>
             </div>
             <div>
               <span className="text-gray-500">Оноогдсон сурагчид:</span>{" "}
@@ -157,15 +225,15 @@ export default async function ViewExam({ params }) {
             </div>
             <div>
               <span className="text-gray-500">Шалгалт өгсөн:</span>{" "}
-              <span className="font-medium">{results.length}</span>
+              {/* <span className="font-medium">{results.length}</span> */}
             </div>
             <div>
               <span className="text-gray-500">Дундаж оноо:</span>{" "}
-              <span className="font-medium">
+              {/* <span className="font-medium">
                 {results.length > 0
                   ? Math.round(results.reduce((sum, result) => sum + result.score, 0) / results.length)
                   : "Тодорхойгүй"}
-              </span>
+              </span> */}
             </div>
           </div>
         </div>
@@ -180,21 +248,24 @@ export default async function ViewExam({ params }) {
 
       <div className="bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden mb-8">
         <div className="p-4 border-b border-gray-200">
-      <h2 className="text-lg font-medium">Даалгаврууд ({questions.length})</h2>
-
-{questions.map((question, index) => (
-  <div key={question.id} className="p-4">
-    <div className="flex justify-between">
-      <h3 className="font-medium">Даалгавар #{index + 1} ({question.points} оноо)</h3>
-            <span className="text-sm text-gray-500">
-  {question.type === "select"
-    ? "Нэг сонголттой"
-    : question.type === "multiselect"
-      ? "Олон сонголттой"
-      : question.type === "fill"
-        ? "Нөхөх"
-        : ""}
-</span>
+          <h2 className="text-lg font-medium">Даалгаврууд ({exam.questions.length})</h2>
+        </div>
+        <div className="divide-y divide-gray-200">
+          {exam.questions.map((question, index) => (
+            <div key={question.id} className="p-4">
+              <div className="flex justify-between">
+                <h3 className="font-medium">
+                  Даалгавар #{index + 1} ({question.points} оноо)
+                </h3>
+                <span className="text-sm text-gray-500">
+                  {question.type === "select"
+                    ? "Нэг сонголттой"
+                    : question.type === "multiselect"
+                      ? "Олон сонголттой"
+                      : question.type === "text"
+                        ? "Текст"
+                        : "Тоон"}
+                </span>
               </div>
               <p className="mt-2 mb-4">{question.text}</p>
 
@@ -224,8 +295,7 @@ export default async function ViewExam({ params }) {
                 </div>
               )}
 
-
-              {question.type === "fill" && (
+              {(question.type === "text" || question.type === "number") && (
                 <div className="mt-2">
                   <div className="font-medium text-sm text-gray-500 mb-1">Зөв хариулт:</div>
                   <div className="p-2 rounded-md border border-green-500 bg-green-50 inline-block">
@@ -238,7 +308,7 @@ export default async function ViewExam({ params }) {
         </div>
       </div>
 
-      {exam.assignedTo.length > 0 && (
+      {/* {exam.assignedTo.length > 0 && (
         <div className="bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden">
           <div className="p-4 border-b border-gray-200">
             <h2 className="text-lg font-medium">Оноогдсон сурагчид ({exam.assignedTo.length})</h2>
@@ -306,7 +376,7 @@ export default async function ViewExam({ params }) {
             </table>
           </div>
         </div>
-      )}
+      )} */}
     </div>
   )
 }

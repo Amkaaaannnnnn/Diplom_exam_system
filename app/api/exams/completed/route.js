@@ -170,18 +170,24 @@ export async function GET(req) {
     if (role === "teacher") {
       const examsWithStats = exams.map((exam) => {
         const totalStudents = exam.assignedTo.length
-        const completedCount = exam.results.length
-        const totalScores = exam.results.reduce((sum, result) => sum + result.score, 0)
+        const completedCount = exam.results ? exam.results.length : 0
+        const totalScores = completedCount > 0 ? exam.results.reduce((sum, result) => sum + result.score, 0) : 0
         const averageScore = completedCount > 0 ? Math.round(totalScores / completedCount) : 0
+        const passRate =
+          completedCount > 0
+            ? Math.round((exam.results.filter((r) => r.score / r.maxScore >= 0.6).length / completedCount) * 100)
+            : 0
 
         return {
           ...exam,
           totalStudents,
           completedCount,
           averageScore,
+          passRate,
         }
       })
 
+      console.log("Returning exams with stats:", examsWithStats.length)
       return NextResponse.json(examsWithStats)
     }
 

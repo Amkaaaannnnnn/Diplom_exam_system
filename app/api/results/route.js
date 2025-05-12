@@ -40,7 +40,7 @@ export async function GET(req) {
     const examId = url.searchParams.get("examId")
 
     // Build the query based on the user role and parameters
-    const whereClause = {}
+    let whereClause = {}
 
     if (currentUser.role === "student") {
       // Students can only see their own results
@@ -49,14 +49,18 @@ export async function GET(req) {
       // Teachers can see results for exams they created
       if (studentId) {
         // If studentId is provided, get results for that student
-        whereClause.userId = studentId
-        whereClause.exam = {
-          userId: currentUser.id,
+        whereClause = {
+          userId: studentId,
+          exam: {
+            userId: currentUser.id,
+          },
         }
       } else {
         // Otherwise, get all results for exams created by this teacher
-        whereClause.exam = {
-          userId: currentUser.id,
+        whereClause = {
+          exam: {
+            userId: currentUser.id,
+          },
         }
       }
     } else if (currentUser.role === "admin") {
@@ -68,8 +72,14 @@ export async function GET(req) {
 
     // If examId is provided, filter by exam
     if (examId) {
-      whereClause.examId = examId
+      if (whereClause.exam) {
+        whereClause.exam.id = examId
+      } else {
+        whereClause.examId = examId
+      }
     }
+
+    console.log("Fetching results with where clause:", JSON.stringify(whereClause))
 
     // Get the results
     const results = await prisma.result.findMany({
@@ -100,9 +110,10 @@ export async function GET(req) {
       },
     })
 
+    console.log(`Found ${results.length} results`)
     return NextResponse.json(results)
   } catch (error) {
     console.error("Error fetching results:", error)
-    return NextResponse.json({ error: "Failed to fetch results" }, { status: 500 })
+    return NextResponse.json({ error: `Failed to fetch results: ${error.message}` }, { status: 500 })
   }
 }

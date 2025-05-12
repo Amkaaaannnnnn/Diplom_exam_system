@@ -1,124 +1,58 @@
 import { NextResponse } from "next/server"
-import bcrypt from "bcryptjs"
 import { prisma } from "@/lib/prisma"
-import { getCurrentUser } from "@/lib/auth"
+import { getServerUser } from "@/lib/auth-server"
 
-// Тодорхой хэрэглэгчийг авах
 export async function GET(req, { params }) {
   try {
-    const { id } = params
+    console.log("GET /api/users/[id] - Start", new Date().toISOString())
 
-    // Одоогийн хэрэглэгч админ эсэхийг шалгах
-    const currentUser = await getCurrentUser()
-    if (!currentUser || currentUser.role !== "admin") {
-      return NextResponse.json({ error: "Зөвшөөрөлгүй" }, { status: 401 })
+    const { id } = params
+    console.log("GET /api/users/[id] - User ID:", id)
+
+    // Get the current user for permission check
+    const currentUser = await getServerUser()
+    if (!currentUser) {
+      console.log("GET /api/users/[id] - No current user found")
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
     }
 
+    console.log("GET /api/users/[id] - Current user:", currentUser.id, currentUser.role)
+
+    // Check permissions - teachers can view student data, admins can view all data
+    const isTeacher = currentUser.role === "teacher"
+    const isAdmin = currentUser.role === "admin"
+    const isSelf = currentUser.id === id
+
+    if (!isAdmin && !isTeacher && !isSelf) {
+      console.log("GET /api/users/[id] - Permission denied")
+      return NextResponse.json({ error: "Permission denied" }, { status: 403 })
+    }
+
+    // Fetch the user
     const user = await prisma.user.findUnique({
       where: { id },
-    })
-
-    if (!user) {
-      return NextResponse.json({ error: "Хэрэглэгч олдсонгүй" }, { status: 404 })
-    }
-
-    // Нууц үгийг хариултаас хасах
-    const { password, ...userWithoutPassword } = user
-
-    return NextResponse.json(userWithoutPassword)
-  } catch (error) {
-    console.error("Хэрэглэгчийг татахад алдаа гарлаа:", error)
-    return NextResponse.json({ error: "Хэрэглэгчийг татах үед алдаа гарлаа" }, { status: 500 })
-  }
-}
-
-// Хэрэглэгчийг шинэчлэх
-export async function PUT(req, { params }) {
-  try {
-    const { id } = params
-
-    // Одоогийн хэрэглэгч админ эсэхийг шалгах
-    const currentUser = await getCurrentUser()
-    if (!currentUser || currentUser.role !== "admin") {
-      return NextResponse.json({ error: "Зөвшөөрөлгүй" }, { status: 401 })
-    }
-
-    const body = await req.json()
-    const { name, username, email, register, role, className, subject, password, status } = body
-
-    // Шаардлагатай талбаруудыг шалгах
-    if (!name || !username || !email || !role || !status) {
-      return NextResponse.json({ error: "Шаардлагатай талбарууд дутуу байна" }, { status: 400 })
-    }
-
-    // Нэвтрэх нэр давхардсан эсэхийг шалгах (хэрэв өөрчлөгдсөн бол)
-    const existingUser = await prisma.user.findFirst({
-      where: {
-        username,
-        id: { not: id },
+      select: {
+        id: true,
+        name: true,
+        username: true,
+        email: true,
+        role: true,
+        className: true,
+        subject: true,
+        status: true,
+        createdAt: true,
       },
     })
 
-    if (existingUser) {
-      return NextResponse.json({ error: "Нэвтрэх нэр давхардсан байна" }, { status: 400 })
+    if (!user) {
+      console.log("GET /api/users/[id] - User not found")
+      return NextResponse.json({ error: "User not found" }, { status: 404 })
     }
 
-    // Шинэчлэх өгөгдлийг бэлтгэх
-    const updateData = {
-      name,
-      username,
-      email,
-      register,
-      role,
-      className,
-      subject,
-      status,
-    }
-
-
-    if (password) {
-      updateData.password = await bcrypt.hash(password, 10)
-    }
-
-
-    const updatedUser = await prisma.user.update({
-      where: { id },
-      data: updateData,
-    })
-
-
-    const { password: _, ...userWithoutPassword } = updatedUser
-
-    return NextResponse.json(userWithoutPassword)
+    console.log("GET /api/users/[id] - User found:", user.id)
+    return NextResponse.json(user)
   } catch (error) {
-    console.error("Хэрэглэгчийг шинэчлэхэд алдаа гарлаа:", error)
-    return NextResponse.json({ error: "Хэрэглэгчийг шинэчлэх үед алдаа гарл��а" }, { status: 500 })
-  }
-}
-
-// Хэрэглэгчийг устгах
-export async function DELETE(req, { params }) {
-  try {
-    const { id } = params
-
-
-    const currentUser = await getCurrentUser()
-    if (!currentUser || currentUser.role !== "admin") {
-      return NextResponse.json({ error: "Зөвшөөрөлгүй" }, { status: 401 })
-    }
-
-
-    if (id === currentUser.id) {
-      return NextResponse.json({ error: "Өөрийн бүртгэлийг устгах боломжгүй" }, { status: 400 })
-    }
-
-    await prisma.user.delete({
-      where: { id },
-    })
-
-    return NextResponse.json({ success: true })
-  } catch (error) {
-    console.error("Хэрэглэгчийг устгахад алдаа гарлаа:", error)
-    return NextResponse.json({ error: "Хэрэглэгчийг устгах үед алдаа гарлаа" }, { status: 500 })
+    console.error("Error fetching user:", error)
+    return NextResponse.json({ error: `Failed to fetch user: ${error.message}` }, { status: 500 })
   }
 }

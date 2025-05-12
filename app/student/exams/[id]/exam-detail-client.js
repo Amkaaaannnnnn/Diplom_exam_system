@@ -2,19 +2,62 @@
 
 import { useState, useEffect } from "react"
 import { useRouter } from "next/navigation"
+import Link from "next/link"
 
 export default function ExamDetailClient({ exam, status, result, examStartTime, examEndTime }) {
   const router = useRouter()
   const [currentTime, setCurrentTime] = useState(new Date())
+  const [timeLeft, setTimeLeft] = useState("")
 
   useEffect(() => {
     // Update current time every minute
     const timer = setInterval(() => {
       setCurrentTime(new Date())
+
+      // Calculate time left if exam is upcoming
+      if (status === "upcoming" && examStartTime) {
+        const diff = examStartTime - new Date()
+        if (diff <= 0) {
+          // Refresh the page if exam has started
+          window.location.reload()
+          return
+        }
+
+        const days = Math.floor(diff / (1000 * 60 * 60 * 24))
+        const hours = Math.floor((diff % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60))
+        const minutes = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60))
+
+        let timeLeftText = ""
+        if (days > 0) timeLeftText += `${days} өдөр `
+        if (hours > 0) timeLeftText += `${hours} цаг `
+        timeLeftText += `${minutes} минут`
+
+        setTimeLeft(timeLeftText)
+      }
     }, 60000)
 
+    // Initial calculation
+    if (status === "upcoming" && examStartTime) {
+      const diff = examStartTime - new Date()
+      if (diff <= 0) {
+        window.location.reload()
+        return
+      }
+
+      const days = Math.floor(diff / (1000 * 60 * 60 * 24))
+      const hours = Math.floor((diff % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60))
+      const minutes = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60))
+
+      let timeLeftText = ""
+      if (days > 0) timeLeftText += `${days} өдөр `
+      if (hours > 0) timeLeftText += `${hours} цаг `
+      timeLeftText += `${minutes} минут`
+
+      setTimeLeft(timeLeftText)
+    }
+
     return () => clearInterval(timer)
-  }, [])
+  }, [status, examStartTime])
 
   const handleStartExam = () => {
     router.push(`/student/exams/${exam.id}/take`)
@@ -24,6 +67,23 @@ export default function ExamDetailClient({ exam, status, result, examStartTime, 
     if (result) {
       router.push(`/student/results/${result.id}`)
     }
+  }
+
+  // Safety check for exam object
+  if (!exam) {
+    return (
+      <div className="p-6">
+        <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded relative" role="alert">
+          <strong className="font-bold">Алдаа!</strong>
+          <span className="block sm:inline"> Шалгалтын мэдээлэл олдсонгүй.</span>
+        </div>
+        <div className="mt-4">
+          <Link href="/student/exams" className="text-blue-600 hover:text-blue-800">
+            Шалгалтууд руу буцах
+          </Link>
+        </div>
+      </div>
+    )
   }
 
   if (status === "completed") {
@@ -48,6 +108,9 @@ export default function ExamDetailClient({ exam, status, result, examStartTime, 
     )
   }
 
+  // Safely access examQuestions
+  const examQuestions = exam.examQuestions || []
+
   return (
     <div className="p-6">
       <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6 mb-6">
@@ -57,6 +120,7 @@ export default function ExamDetailClient({ exam, status, result, examStartTime, 
             <p className="text-gray-600">Хичээл: {exam.subject}</p>
             <p className="text-gray-600">Анги: {exam.className || "Тодорхойгүй"}</p>
             <p className="text-gray-600">Нийт оноо: {exam.totalPoints}</p>
+            <p className="text-gray-600">Асуултын тоо: {examQuestions.length || 0}</p>
           </div>
           <div>
             <p className="text-gray-600">Хугацаа: {exam.duration} минут</p>
@@ -64,8 +128,16 @@ export default function ExamDetailClient({ exam, status, result, examStartTime, 
               Огноо: {exam.examDate ? new Date(exam.examDate).toLocaleDateString() : "Тодорхойгүй"}
             </p>
             <p className="text-gray-600">Цаг: {exam.examTime || "Тодорхойгүй"}</p>
+            <p className="text-gray-600">Багш: {exam.user?.name || "Тодорхойгүй"}</p>
           </div>
         </div>
+
+        {exam.description && (
+          <div className="mb-6">
+            <h2 className="text-lg font-semibold mb-2">Тайлбар</h2>
+            <p className="text-gray-700">{exam.description}</p>
+          </div>
+        )}
 
         {status === "active" ? (
           <>
@@ -79,6 +151,34 @@ export default function ExamDetailClient({ exam, status, result, examStartTime, 
                 <li>Бэлэн болсон үедээ "Шалгалт эхлүүлэх" товчийг дарна уу.</li>
               </ul>
             </div>
+
+            {examQuestions.length > 0 && (
+              <div className="mb-6">
+                <h2 className="text-lg font-semibold mb-2">Асуултын жагсаалт</h2>
+                <div className="bg-gray-50 rounded-lg p-4 border border-gray-200">
+                  <p className="text-gray-700 mb-2">Энэ шалгалт нийт {examQuestions.length} асуулттай.</p>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    {examQuestions.map((eq, index) => (
+                      <div key={eq.question?.id || index} className="border border-gray-200 rounded p-3 bg-white">
+                        <p className="font-medium">Асуулт {index + 1}</p>
+                        <p className="text-sm text-gray-600">Оноо: {eq.question?.points || 1}</p>
+                        <p className="text-sm text-gray-600">
+                          Төрөл:{" "}
+                          {eq.question?.type === "MULTIPLE_CHOICE"
+                            ? "Сонголттой"
+                            : eq.question?.type === "TRUE_FALSE"
+                              ? "Үнэн/Худал"
+                              : eq.question?.type === "SHORT_ANSWER"
+                                ? "Богино хариулт"
+                                : "Бусад"}
+                        </p>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            )}
+
             <div className="flex justify-end">
               <button
                 onClick={handleStartExam}
@@ -105,8 +205,35 @@ export default function ExamDetailClient({ exam, status, result, examStartTime, 
               цагт эхэлнэ.
             </p>
             <p className="text-yellow-600 mt-2">
-              Шалгалт эхлэх хүртэл хүлээнэ үү. Шалгалт эхэлсэн үед та оролцох боломжтой болно.
+              {timeLeft ? `Шалгалт эхлэх хүртэл ${timeLeft} үлдлээ.` : "Шалгалт эхлэх хүртэл хүлээнэ үү."}
             </p>
+
+            {examQuestions.length > 0 && (
+              <div className="mt-6 text-left">
+                <h2 className="text-lg font-semibold mb-2">Асуултын жагсаалт</h2>
+                <div className="bg-white rounded-lg p-4 border border-gray-200">
+                  <p className="text-gray-700 mb-2">Энэ шалгалт нийт {examQuestions.length} асуулттай.</p>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    {examQuestions.map((eq, index) => (
+                      <div key={eq.question?.id || index} className="border border-gray-200 rounded p-3 bg-white">
+                        <p className="font-medium">Асуулт {index + 1}</p>
+                        <p className="text-sm text-gray-600">Оноо: {eq.question?.points || 1}</p>
+                        <p className="text-sm text-gray-600">
+                          Төрөл:{" "}
+                          {eq.question?.type === "MULTIPLE_CHOICE"
+                            ? "Сонголттой"
+                            : eq.question?.type === "TRUE_FALSE"
+                              ? "Үнэн/Худал"
+                              : eq.question?.type === "SHORT_ANSWER"
+                                ? "Богино хариулт"
+                                : "Бусад"}
+                        </p>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
         )}
       </div>

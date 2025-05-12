@@ -11,22 +11,49 @@ export default function StudentExamResultPage() {
   const [result, setResult] = useState(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
+  const [debugInfo, setDebugInfo] = useState(null)
 
   useEffect(() => {
     async function fetchResult() {
       try {
         setLoading(true)
-        const response = await fetch(`/api/results/${params.id}`)
-        if (!response.ok) {
-          const errorData = await response.json()
-          throw new Error(errorData.error || "Шалгалтын дүнг ачаалахад алдаа гарлаа")
+        console.log("Fetching result for ID:", params.id)
+
+        const response = await fetch(`/api/results/${params.id}`, {
+          credentials: "include",
+        })
+
+        const responseText = await response.text()
+        let data
+
+        try {
+          data = JSON.parse(responseText)
+        } catch (e) {
+          console.error("Failed to parse response as JSON:", e, responseText)
+          throw new Error(`Invalid response format: ${responseText.substring(0, 100)}...`)
         }
-        const data = await response.json()
+
+        if (!response.ok) {
+          throw new Error(data.error || `Шалгалтын дүн хайхад алдаа гарлаа: ${response.status}`)
+        }
+
+        console.log("Result data:", data)
         setResult(data)
         setError(null)
       } catch (err) {
         console.error("Error fetching result:", err)
         setError(err.message || "Шалгалтын дүнг ачаалахад алдаа гарлаа")
+
+        // Collect debug info
+        try {
+          const debugResponse = await fetch("/api/debug")
+          if (debugResponse.ok) {
+            const debugData = await debugResponse.json()
+            setDebugInfo(debugData)
+          }
+        } catch (debugErr) {
+          console.error("Failed to fetch debug info:", debugErr)
+        }
       } finally {
         setLoading(false)
       }
@@ -39,6 +66,7 @@ export default function StudentExamResultPage() {
 
   // Үнэлгээ тодорхойлох
   const getGrade = (score) => {
+    if (!score && score !== 0) return "N/A"
     if (score >= 90) return "A"
     if (score >= 80) return "B"
     if (score >= 70) return "C"
@@ -48,6 +76,7 @@ export default function StudentExamResultPage() {
 
   // Үнэлгээний өнгө тодорхойлох
   const getGradeColor = (score) => {
+    if (!score && score !== 0) return "bg-gray-100 text-gray-800"
     if (score >= 90) return "bg-green-100 text-green-800"
     if (score >= 80) return "bg-blue-100 text-blue-800"
     if (score >= 70) return "bg-yellow-100 text-yellow-800"
@@ -57,29 +86,45 @@ export default function StudentExamResultPage() {
 
   // Хугацааг тооцоолох
   const calculateDuration = (startedAt, submittedAt) => {
-    if (!startedAt || !submittedAt) return "Тодорхойгүй"
-    const startTime = new Date(startedAt)
-    const endTime = new Date(submittedAt)
-    const durationMs = endTime - startTime
+    if (!startedAt || !submittedAt) return { minutes: 0, seconds: 0, text: "Тодорхойгүй" }
 
-    // Хугацааг минут, секундээр харуулах
-    const minutes = Math.floor(durationMs / 60000)
-    const seconds = Math.floor((durationMs % 60000) / 1000)
+    try {
+      const startTime = new Date(startedAt)
+      const endTime = new Date(submittedAt)
+      const durationMs = endTime - startTime
 
-    return `${minutes} мин ${seconds} сек`
+      // Хугацааг минут, секундээр харуулах
+      const minutes = Math.floor(durationMs / 60000)
+      const seconds = Math.floor((durationMs % 60000) / 1000)
+
+      return {
+        minutes,
+        seconds,
+        text: `${minutes} мин ${seconds} сек`,
+        totalMinutes: Math.round((durationMs / 60000) * 10) / 10, // Round to 1 decimal place
+      }
+    } catch (e) {
+      console.error("Error calculating duration:", e)
+      return { minutes: 0, seconds: 0, text: "Тодорхойгүй" }
+    }
   }
 
   // Шалгалт өгсөн өдөр, цагийг форматлах
   const formatDateTime = (dateString) => {
     if (!dateString) return "Тодорхойгүй"
-    const date = new Date(dateString)
-    return date.toLocaleString("mn-MN", {
-      year: "numeric",
-      month: "2-digit",
-      day: "2-digit",
-      hour: "2-digit",
-      minute: "2-digit",
-    })
+    try {
+      const date = new Date(dateString)
+      return date.toLocaleString("mn-MN", {
+        year: "numeric",
+        month: "2-digit",
+        day: "2-digit",
+        hour: "2-digit",
+        minute: "2-digit",
+      })
+    } catch (e) {
+      console.error("Error formatting date:", e)
+      return "Тодорхойгүй"
+    }
   }
 
   if (loading) {
@@ -99,6 +144,12 @@ export default function StudentExamResultPage() {
             <strong className="font-bold">Алдаа!</strong>
             <span className="block sm:inline ml-2">{error}</span>
           </div>
+          {debugInfo && (
+            <div className="mt-4 p-4 bg-gray-100 rounded overflow-auto">
+              <h3 className="font-bold mb-2">Debug Info:</h3>
+              <pre className="text-xs">{JSON.stringify(debugInfo, null, 2)}</pre>
+            </div>
+          )}
           <button
             onClick={() => router.push("/student/results")}
             className="mt-4 bg-red-200 text-red-700 px-4 py-2 rounded hover:bg-red-300"
@@ -132,7 +183,24 @@ export default function StudentExamResultPage() {
 
   const exam = result.exam || {}
   const user = result.user || {}
-  const answers = result.answers || []
+  const answers = Array.isArray(result.answers) ? result.answers : []
+  const duration = calculateDuration(result.startedAt, result.submittedAt)
+
+  // Calculate total earned points
+  const totalEarnedPoints = answers.reduce((total, answer) => {
+    if (answer.isCorrect && answer.question) {
+      return total + (answer.question.points || 1)
+    }
+    return total
+  }, 0)
+
+  // Calculate total possible points
+  const totalPossiblePoints = answers.reduce((total, answer) => {
+    if (answer.question) {
+      return total + (answer.question.points || 1)
+    }
+    return total
+  }, 0)
 
   return (
     <div className="p-6">
@@ -142,12 +210,12 @@ export default function StudentExamResultPage() {
         </Link>
         <h1 className="text-2xl font-bold">{exam.title || "Шалгалтын дүн"}</h1>
         <div className="text-gray-500 ml-2">
-          {exam.subject} | {exam.className} | {new Date(exam.examDate || result.createdAt).toLocaleDateString()}
+          {exam.subject} | {new Date(exam.examDate || result.createdAt || new Date()).toLocaleDateString()}
         </div>
         <div className="ml-auto">
           <button
             onClick={() => window.print()}
-            className="flex items-center gap-2 bg-blue-600 text-white rounded-md px-4 py-2 hover:bg-blue-700"
+            className="flex items-center gap-2 bg-blue-600 text-white rounded-md px-4 py-2 hover:bg-blue-700 print:hidden"
           >
             <Printer size={18} />
             <span>Хэвлэх</span>
@@ -163,15 +231,15 @@ export default function StudentExamResultPage() {
             <div className="space-y-2">
               <div className="flex">
                 <span className="w-32 text-gray-500">Нэр:</span>
-                <span className="font-medium">{user.name}</span>
+                <span className="font-medium">{user.name || "Тодорхойгүй"}</span>
               </div>
               <div className="flex">
                 <span className="w-32 text-gray-500">Нэвтрэх нэр:</span>
-                <span className="font-medium">{user.username}</span>
+                <span className="font-medium">{user.username || "Тодорхойгүй"}</span>
               </div>
               <div className="flex">
                 <span className="w-32 text-gray-500">Анги:</span>
-                <span className="font-medium">{user.className}</span>
+                <span className="font-medium">{user.className || "Тодорхойгүй"}</span>
               </div>
             </div>
           </div>
@@ -182,12 +250,12 @@ export default function StudentExamResultPage() {
               <div className="flex">
                 <span className="w-32 text-gray-500">Оноо:</span>
                 <span className="font-medium">
-                  {result.earnedPoints || Math.round((result.score * exam.totalPoints) / 100)}/{exam.totalPoints}
+                  {totalEarnedPoints}/{totalPossiblePoints}
                 </span>
               </div>
               <div className="flex">
                 <span className="w-32 text-gray-500">Хувь:</span>
-                <span className="font-medium">{result.score}%</span>
+                <span className="font-medium">{result.score || 0}%</span>
               </div>
               <div className="flex items-center">
                 <span className="w-32 text-gray-500">Үнэлгээ:</span>
@@ -205,7 +273,7 @@ export default function StudentExamResultPage() {
               </div>
               <div className="flex">
                 <span className="w-32 text-gray-500">Зарцуулсан:</span>
-                <span className="font-medium font-mono">{calculateDuration(result.startedAt, result.submittedAt)}</span>
+                <span className="font-medium font-mono">{typeof duration === "string" ? duration : duration.text}</span>
               </div>
             </div>
           </div>
@@ -221,25 +289,31 @@ export default function StudentExamResultPage() {
               <FileText className="text-blue-500 mr-2" size={20} />
               <h3 className="font-medium">Асуултын тоо</h3>
             </div>
-            <p>{answers.length} асуулт</p>
+            <p className="text-2xl font-semibold">{answers.length}</p>
+            <p className="text-sm text-gray-600">Нийт асуулт</p>
           </div>
 
           <div className="bg-green-50 p-4 rounded-lg border border-green-100">
             <div className="flex items-center mb-2">
-              <Clock className="text-green-500 mr-2" size={20} />
-              <h3 className="font-medium">Хугацаа</h3>
+              <Award className="text-green-500 mr-2" size={20} />
+              <h3 className="font-medium">Зөв хариулсан</h3>
             </div>
-            <p>{exam.duration || "Тодорхойгүй"} минут</p>
+            <p className="text-2xl font-semibold">
+              {answers.filter((a) => a.isCorrect).length} / {answers.length}
+            </p>
+            <p className="text-sm text-gray-600">
+              {answers.length > 0 ? Math.round((answers.filter((a) => a.isCorrect).length / answers.length) * 100) : 0}%
+              зөв
+            </p>
           </div>
 
           <div className="bg-purple-50 p-4 rounded-lg border border-purple-100">
             <div className="flex items-center mb-2">
-              <Award className="text-purple-500 mr-2" size={20} />
-              <h3 className="font-medium">Зөв хариулсан</h3>
+              <Clock className="text-purple-500 mr-2" size={20} />
+              <h3 className="font-medium">Хугацаа</h3>
             </div>
-            <p>
-              {answers.filter((a) => a.isCorrect).length} / {answers.length} асуулт
-            </p>
+            <p className="text-2xl font-semibold">{typeof duration === "string" ? "N/A" : duration.minutes} минут</p>
+            <p className="text-sm text-gray-600">{typeof duration === "string" ? "" : `${duration.seconds} секунд`}</p>
           </div>
         </div>
       </div>
@@ -247,175 +321,164 @@ export default function StudentExamResultPage() {
       {/* Хариултууд */}
       <h2 className="text-xl font-medium mb-4">Хариултууд</h2>
       <div className="space-y-6">
-        {answers.map((answer, index) => {
-          const question = answer.question
-          if (!question) return null
+        {answers.length > 0 ? (
+          answers.map((answer, index) => {
+            const question = answer.question || {
+              text: `Асуулт ${index + 1}`,
+              type: "UNKNOWN",
+              points: 1,
+              options: [],
+              correctAnswer: "",
+            }
 
-          const isCorrect = answer.isCorrect
-          const studentAnswer = answer.studentAnswer || ""
-          const correctAnswer = question.correctAnswer || ""
+            const isCorrect = answer.isCorrect
+            const studentAnswer = answer.answer || answer.studentAnswer || ""
+            const correctAnswer = question.correctAnswer || ""
 
-          return (
-            <div key={index} className="bg-white rounded-lg shadow-md p-6">
-              <div className="flex justify-between items-start mb-4">
-                <div className="flex items-center">
-                  <span className="bg-gray-200 text-gray-800 rounded-full w-8 h-8 flex items-center justify-center mr-3">
-                    {index + 1}
-                  </span>
-                  <h3 className="text-lg font-medium">{question.text}</h3>
+            return (
+              <div key={index} className="bg-white rounded-lg shadow-md p-6">
+                <div className="flex justify-between items-start mb-4">
+                  <div className="flex items-start">
+                    <span className="bg-gray-200 text-gray-800 rounded-full w-8 h-8 flex items-center justify-center mr-3 flex-shrink-0 mt-1">
+                      {index + 1}
+                    </span>
+                    <div>
+                      <h3 className="text-lg font-medium">{question.text}</h3>
+                      {question.category && (
+                        <p className="text-gray-600 mt-1">
+                          <span className="font-medium">Сэдэв:</span> {question.category}
+                        </p>
+                      )}
+                      {question.difficulty && (
+                        <p className="text-gray-600">
+                          <span className="font-medium">Түвшин:</span> {question.difficulty}
+                        </p>
+                      )}
+                    </div>
+                  </div>
+                  <div className="flex items-center">
+                    <span className="text-gray-500 mr-2">{question.points || 1} оноо</span>
+                    {isCorrect !== undefined &&
+                      (isCorrect ? (
+                        <div className="bg-green-100 text-green-800 rounded-full p-1">
+                          <Check size={16} />
+                        </div>
+                      ) : (
+                        <div className="bg-red-100 text-red-800 rounded-full p-1">
+                          <X size={16} />
+                        </div>
+                      ))}
+                  </div>
                 </div>
-                <div className="flex items-center">
-                  <span className="text-gray-500 mr-2">{question.points} оноо</span>
-                  {isCorrect !== undefined &&
-                    (isCorrect ? (
-                      <div className="bg-green-100 text-green-800 rounded-full p-1">
-                        <Check size={16} />
-                      </div>
+
+                {/* Сонголтот асуулт */}
+                {(question.type === "select" || question.type === "MULTIPLE_CHOICE") && question.options && (
+                  <div className="space-y-2 mt-4">
+                    {Array.isArray(question.options) ? (
+                      question.options.map((option, optIndex) => {
+                        const optionId = option.id || option
+                        const optionText = option.text || option
+
+                        return (
+                          <div
+                            key={optIndex}
+                            className={`
+                              p-3 rounded-md border
+                              ${
+                                studentAnswer === optionId
+                                  ? isCorrect
+                                    ? "border-green-500 bg-green-50"
+                                    : "border-red-500 bg-red-50"
+                                  : correctAnswer === optionId
+                                    ? "border-green-500 bg-green-50"
+                                    : "border-gray-200"
+                              }
+                            `}
+                          >
+                            <div className="flex items-center">
+                              <div
+                                className={`
+                                  w-5 h-5 rounded-full border flex items-center justify-center mr-3
+                                  ${
+                                    studentAnswer === optionId
+                                      ? isCorrect
+                                        ? "border-green-500 bg-green-500 text-white"
+                                        : "border-red-500 bg-red-500 text-white"
+                                      : correctAnswer === optionId
+                                        ? "border-green-500 bg-green-500 text-white"
+                                        : "border-gray-300"
+                                  }
+                                `}
+                              >
+                                {(studentAnswer === optionId || correctAnswer === optionId) && (
+                                  <svg
+                                    xmlns="http://www.w3.org/2000/svg"
+                                    className="h-3 w-3"
+                                    viewBox="0 0 20 20"
+                                    fill="currentColor"
+                                  >
+                                    <path
+                                      fillRule="evenodd"
+                                      d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z"
+                                      clipRule="evenodd"
+                                    />
+                                  </svg>
+                                )}
+                              </div>
+                              <span>{optionText}</span>
+                            </div>
+                          </div>
+                        )
+                      })
                     ) : (
-                      <div className="bg-red-100 text-red-800 rounded-full p-1">
-                        <X size={16} />
+                      <div className="p-3 rounded-md border border-gray-200">
+                        <p className="text-gray-500">Сонголтууд олдсонгүй</p>
                       </div>
-                    ))}
-                </div>
-              </div>
+                    )}
+                  </div>
+                )}
 
-              {/* Сонголтот асуулт */}
-              {question.type === "select" && question.options && (
-                <div className="space-y-2 mt-4">
-                  {question.options.map((option) => (
+                {/* Текст, тоо, нөхөх асуулт */}
+                {(question.type === "text" ||
+                  question.type === "number" ||
+                  question.type === "fill" ||
+                  question.type === "SHORT_ANSWER" ||
+                  question.type === "TRUE_FALSE") && (
+                  <div className="mt-4">
+                    <div className="mb-2">
+                      <span className="text-sm text-gray-500">Таны хариулт:</span>
+                    </div>
                     <div
-                      key={option.id}
                       className={`p-3 rounded-md border ${
-                        studentAnswer === option.id
-                          ? isCorrect
-                            ? "border-green-500 bg-green-50"
-                            : "border-red-500 bg-red-50"
-                          : correctAnswer === option.id
-                            ? "border-green-500 bg-green-50"
-                            : "border-gray-200"
+                        isCorrect ? "border-green-500 bg-green-50" : "border-red-500 bg-red-50"
                       }`}
                     >
-                      <div className="flex items-center">
-                        <div
-                          className={`w-5 h-5 rounded-full border flex items-center justify-center mr-3 ${
-                            studentAnswer === option.id
-                              ? isCorrect
-                                ? "border-green-500 bg-green-500 text-white"
-                                : "border-red-500 bg-red-500 text-white"
-                              : correctAnswer === option.id
-                                ? "border-green-500 bg-green-500 text-white"
-                                : "border-gray-300"
-                          }`}
-                        >
-                          {(studentAnswer === option.id || correctAnswer === option.id) && <Check size={12} />}
-                        </div>
-                        <span>{option.text}</span>
+                      {studentAnswer || "Хариулаагүй"}
+                    </div>
+                    <div className="mt-2">
+                      <span className="text-sm text-gray-500">Зөв хариулт:</span>
+                      <div className="p-3 rounded-md border border-green-500 bg-green-50 mt-1">
+                        {correctAnswer || "Тодорхойгүй"}
                       </div>
                     </div>
-                  ))}
-                </div>
-              )}
-
-              {/* Олон сонголтот асуулт */}
-              {question.type === "multiselect" && question.options && (
-                <div className="space-y-2 mt-4">
-                  {question.options.map((option) => {
-                    let studentAnswerArray = []
-                    try {
-                      studentAnswerArray =
-                        typeof studentAnswer === "string" && studentAnswer
-                          ? JSON.parse(studentAnswer)
-                          : Array.isArray(studentAnswer)
-                            ? studentAnswer
-                            : []
-                    } catch (e) {
-                      studentAnswerArray = [studentAnswer]
-                    }
-
-                    let correctAnswerArray = []
-                    try {
-                      correctAnswerArray =
-                        typeof correctAnswer === "string" && correctAnswer
-                          ? correctAnswer.startsWith("[")
-                            ? JSON.parse(correctAnswer)
-                            : [correctAnswer]
-                          : Array.isArray(correctAnswer)
-                            ? correctAnswer
-                            : []
-                    } catch (e) {
-                      correctAnswerArray = [correctAnswer]
-                    }
-
-                    const isSelected = studentAnswerArray.includes(option.id)
-                    const isCorrectOption = correctAnswerArray.includes(option.id)
-
-                    return (
-                      <div
-                        key={option.id}
-                        className={`p-3 rounded-md border ${
-                          isSelected
-                            ? isCorrectOption
-                              ? "border-green-500 bg-green-50"
-                              : "border-red-500 bg-red-50"
-                            : isCorrectOption
-                              ? "border-green-500 bg-green-50"
-                              : "border-gray-200"
-                        }`}
-                      >
-                        <div className="flex items-center">
-                          <div
-                            className={`w-5 h-5 rounded-md border flex items-center justify-center mr-3 ${
-                              isSelected
-                                ? isCorrectOption
-                                  ? "border-green-500 bg-green-500 text-white"
-                                  : "border-red-500 bg-red-500 text-white"
-                                : isCorrectOption
-                                  ? "border-green-500 bg-green-500 text-white"
-                                  : "border-gray-300"
-                            }`}
-                          >
-                            {(isSelected || isCorrectOption) && <Check size={12} />}
-                          </div>
-                          <span>{option.text}</span>
-                        </div>
-                      </div>
-                    )
-                  })}
-                </div>
-              )}
-
-              {/* Текст, тоо, нөхөх асуулт */}
-              {(question.type === "text" || question.type === "number" || question.type === "fill") && (
-                <div className="mt-4">
-                  <div className="mb-2">
-                    <span className="text-sm text-gray-500">Таны хариулт:</span>
                   </div>
-                  <div
-                    className={`p-3 rounded-md border ${
-                      isCorrect ? "border-green-500 bg-green-50" : "border-red-500 bg-red-50"
-                    }`}
-                  >
-                    {studentAnswer || "Хариулаагүй"}
-                  </div>
-                  <div className="mt-2">
-                    <span className="text-sm text-gray-500">Зөв хариулт:</span>
-                    <div className="p-3 rounded-md border border-green-500 bg-green-50 mt-1">
-                      {correctAnswer || "Тодорхойгүй"}
-                    </div>
-                  </div>
-                </div>
-              )}
+                )}
 
-              {/* Тайлбар */}
-              {question.explanation && (
-                <div className="mt-4 p-3 bg-blue-50 border border-blue-200 rounded-md">
-                  <div className="text-sm font-medium text-blue-800 mb-1">Тайлбар:</div>
-                  <div className="text-blue-700">{question.explanation}</div>
-                </div>
-              )}
-            </div>
-          )
-        })}
+                {/* Багшийн тайлбар */}
+                {answer.feedback && (
+                  <div className="mt-4 p-3 bg-purple-50 border border-purple-200 rounded-md">
+                    <div className="text-sm font-medium text-purple-800 mb-1">Багшийн тайлбар:</div>
+                    <div className="text-purple-700">{answer.feedback}</div>
+                  </div>
+                )}
+              </div>
+            )
+          })
+        ) : (
+          <div className="bg-yellow-50 p-4 rounded-lg border border-yellow-100">
+            <p className="text-yellow-700">Хариултууд олдсонгүй.</p>
+          </div>
+        )}
       </div>
 
       {/* Багшийн тайлбар */}
@@ -426,7 +489,7 @@ export default function StudentExamResultPage() {
         </div>
       )}
 
-      <div className="mt-6 flex justify-center">
+      <div className="mt-6 flex justify-center print:hidden">
         <Link
           href="/student/results"
           className="bg-gray-100 hover:bg-gray-200 text-gray-800 font-medium py-2 px-4 rounded-md"

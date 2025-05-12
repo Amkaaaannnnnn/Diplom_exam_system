@@ -116,7 +116,7 @@ export async function DELETE(req, { params }) {
       return NextResponse.json({ error: "Зөвшөөрөлгүй" }, { status: 403 })
     }
 
-    // ✅ Шалгалтад орсон эсэхийг шалгах
+
     const isUsedInExam = await prisma.examQuestion.findFirst({
       where: {
         questionId: id,

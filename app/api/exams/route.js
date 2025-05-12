@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server"
 import { prisma } from "@/lib/prisma"
-import { getCurrentUser } from "@/lib/auth"
+import { getServerUser } from "@/lib/auth-server"
 
 // Add this function at the beginning of the file, right after the imports:
 function normalizeClassName(className) {
@@ -15,7 +15,7 @@ function normalizeClassName(className) {
 export async function POST(req) {
   try {
     // Check if the current user is an admin or teacher
-    const currentUser = await getCurrentUser()
+    const currentUser = await getServerUser()
     if (!currentUser || (currentUser.role !== "admin" && currentUser.role !== "teacher")) {
       return NextResponse.json({ error: "Зөвшөөрөлгүй" }, { status: 401 })
     }
@@ -96,8 +96,8 @@ export async function POST(req) {
               },
             })
           } catch (error) {
-            console.error("Асуулт үүсгэхэд алдаа гарлаа:", error)
-            throw new Error(`Асуулт үүсгэхэд алдаа гарлаа: ${error.message}`)
+            console.error("Даалгавар үүсгэхэд алдаа гарлаа:", error)
+            throw new Error(`Даалгавар үүсгэхэд алдаа гарлаа: ${error.message}`)
           }
         }
         console.log(`Added ${questions.length} questions to exam`)
@@ -166,10 +166,12 @@ export async function POST(req) {
 export async function GET(req) {
   try {
     // Check if the current user is authenticated
-    const currentUser = await getCurrentUser()
+    const currentUser = await getServerUser()
     if (!currentUser) {
       return NextResponse.json({ error: "Зөвшөөрөлгүй" }, { status: 401 })
     }
+
+    console.log("Fetching exams for user:", currentUser.id, currentUser.role)
 
     // Get exams based on role
     let exams
@@ -282,6 +284,7 @@ export async function GET(req) {
       })
     }
 
+    console.log(`Found ${exams.length} exams`)
     return NextResponse.json(exams)
   } catch (error) {
     console.error("Error fetching exams:", error)

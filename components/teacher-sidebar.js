@@ -2,7 +2,7 @@
 
 import Link from "next/link"
 import { usePathname } from "next/navigation"
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import {
   Home,
   Users,
@@ -14,13 +14,48 @@ import {
   ChevronRight,
   Calendar,
   CheckSquare,
-  Database,
   HelpCircle,
 } from "lucide-react"
 
 export default function TeacherSidebar() {
   const pathname = usePathname()
   const [examDropdownOpen, setExamDropdownOpen] = useState(true)
+  const [userData, setUserData] = useState({
+    name: "",
+    username: "",
+  })
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    async function fetchCurrentUser() {
+      try {
+        setLoading(true)
+        const response = await fetch("/api/me")
+        if (response.ok) {
+          const data = await response.json()
+          setUserData({
+            name: data.user.name || "Нэр олдсонгүй",
+            username: data.user.username || "",
+          })
+        } else {
+          setUserData({
+            name: "Нэр олдсонгүй",
+            username: "",
+          })
+        }
+      } catch (error) {
+        console.error("Error fetching user data:", error)
+        setUserData({
+          name: "Нэр олдсонгүй",
+          username: "",
+        })
+      } finally {
+        setLoading(false)
+      }
+    }
+
+    fetchCurrentUser()
+  }, [])
 
   const isActive = (path) => {
     return pathname === path || pathname.startsWith(path + "/")
@@ -60,7 +95,7 @@ export default function TeacherSidebar() {
               className={`flex items-center gap-3 px-3 py-2 rounded-md ${isActive("/teacher") && !isActive("/teacher/exams") && !isActive("/teacher/students") && !isActive("/teacher/reports") && !isActive("/teacher/settings") ? "bg-blue-100 text-blue-600" : "text-gray-700 hover:bg-gray-100"}`}
             >
               <Home size={20} />
-              <span>Шалгалтын сан</span>
+              <span>Нүүр хуудас</span>
             </Link>
           </li>
 
@@ -88,15 +123,6 @@ export default function TeacherSidebar() {
 
             {examDropdownOpen && (
               <ul className="ml-8 mt-1 space-y-1">
-                <li>
-                  <Link
-                    href="/teacher/exams"
-                    className={`flex items-center gap-3 px-3 py-2 rounded-md ${pathname === "/teacher/exams" ? "bg-blue-100 text-blue-600" : "text-gray-700 hover:bg-gray-100"}`}
-                  >
-                    <Database size={16} />
-                    <span>Шалгалтын сан</span>
-                  </Link>
-                </li>
                 <li>
                   <Link
                     href="/teacher/exams/upcoming"
@@ -153,12 +179,20 @@ export default function TeacherSidebar() {
       <div className="p-4 border-t border-gray-200">
         <div className="flex items-center justify-between">
           <div>
-            <p className="font-medium">Багш - Б. Батчимэг</p>
-            <p className="text-sm text-gray-500">TCH00001</p>
+            {loading ? (
+              <>
+                <p className="font-medium">Багш - Ачаалж байна...</p>
+                <p className="text-sm text-gray-500">...</p>
+              </>
+            ) : (
+              <>
+                <p className="font-medium">Багш - {userData.name}</p>
+                <p className="text-sm text-gray-500">{userData.username}</p>
+              </>
+            )}
           </div>
         </div>
-        <button onClick={handleLogout} 
-        className="flex items-center gap-2 mt-4 text-red-600 hover:text-red-800">
+        <button onClick={handleLogout} className="flex items-center gap-2 mt-4 text-red-600 hover:text-red-800">
           <LogOut size={18} />
           <span>Гарах</span>
         </button>

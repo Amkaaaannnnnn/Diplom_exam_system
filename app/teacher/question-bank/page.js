@@ -165,7 +165,7 @@ export default function QuestionBankPage() {
                     <td className="px-6 py-4">{q.text}</td>
                     <td className="px-6 py-4">{q.category || "-"}</td>
                     <td className="px-6 py-4">{q.type}</td>
-                    <td className="px-6 py-4">{q.difficulty}</td>
+                    <td className="px-6 py-4">{q.difficulty || "-"}</td>
                     <td className="px-6 py-4">{q.points}</td>
                     <td className="px-6 py-4">
                       <div className="flex space-x-2">

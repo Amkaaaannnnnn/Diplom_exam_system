@@ -33,6 +33,11 @@ export default function StudentResultCard({ result }) {
     return "bg-red-100 text-red-800"
   }
 
+  // Calculate correct answers count
+  const correctAnswers = Array.isArray(result.answers) ? result.answers.filter((a) => a.isCorrect).length : 0
+
+  const totalQuestions = Array.isArray(result.answers) ? result.answers.length : 0
+
   return (
     <div className="bg-white rounded-lg shadow-md overflow-hidden">
       <div className="p-4 border-b border-gray-200">
@@ -72,6 +77,18 @@ export default function StudentResultCard({ result }) {
             </span>
           </div>
         </div>
+
+        {/* Add correct answers count */}
+        {totalQuestions > 0 && (
+          <div className="mb-4 p-3 bg-gray-50 rounded-md">
+            <div className="flex justify-between">
+              <span>Зөв хариулсан:</span>
+              <span className="font-medium">
+                {correctAnswers}/{totalQuestions} ({Math.round((correctAnswers / totalQuestions) * 100)}%)
+              </span>
+            </div>
+          </div>
+        )}
 
         <div className="flex justify-end">
           <Link

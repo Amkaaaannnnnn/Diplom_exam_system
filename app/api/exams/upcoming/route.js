@@ -2,144 +2,84 @@ import { NextResponse } from "next/server"
 import { prisma } from "@/lib/prisma"
 import { getCurrentUser } from "@/lib/auth"
 
-export async function GET(req) {
+export async function GET() {
   try {
-    const currentUser = await getCurrentUser()
-    if (!currentUser) {
-      return NextResponse.json({ error: "Зөвшөөрөлгүй" }, { status: 401 })
+    const user = await getCurrentUser()
+
+    if (!user) {
+      return NextResponse.json({ message: "Unauthorized" }, { status: 401 })
     }
 
-    const url = new URL(req.url)
-    const role = url.searchParams.get("role")
-
-    // Get current date and time
     const now = new Date()
 
-    // Prepare the query based on the user's role
-    let query = {}
+    // Use a simpler query structure to avoid errors
+    let exams = []
 
-    if (role === "teacher" && currentUser.role === "teacher") {
-      // Teachers see their own upcoming exams
-      query = {
-        where: {
-          userId: currentUser.id,
-          OR: [
-            {
-              // Exams with a future date
+    if (user.role === "student") {
+      // For students, get exams assigned to them that haven't started yet
+      try {
+        // First check if examAssignment table exists
+        let assignmentTableExists = false
+        try {
+          await prisma.$queryRaw`SELECT 1 FROM "examAssignment" LIMIT 1`
+          assignmentTableExists = true
+        } catch (error) {
+          assignmentTableExists = false
+        }
+
+        if (assignmentTableExists) {
+          const assignments = await prisma.examAssignment.findMany({
+            where: {
+              userId: user.id,
+            },
+            include: {
+              exam: true,
+            },
+          })
+
+          // Filter for upcoming exams
+          exams = assignments
+            .filter((assignment) => {
+              const examDate = new Date(assignment.exam.examDate)
+              return examDate > now
+            })
+            .map((assignment) => assignment.exam)
+        } else {
+          // Fallback to class-based assignment
+          exams = await prisma.exam.findMany({
+            where: {
+              className: user.className,
               examDate: {
                 gt: now,
               },
             },
-            {
-              // Exams with today's date but future time
-              examDate: now.toISOString().split("T")[0],
-              examTime: {
-                gt: now.toTimeString().substring(0, 5), // HH:MM format
-              },
-            },
-            {
-              // Exams with no date (always show these)
-              examDate: null,
-            },
-          ],
-        },
-        include: {
-          user: {
-            select: {
-              id: true,
-              name: true,
-              username: true,
-            },
-          },
-          examQuestions: {
-            include: {
-              question: true,
-            },
-          },
-          assignedTo: {
-            include: {
-              user: {
-                select: {
-                  id: true,
-                  name: true,
-                  username: true,
-                },
-              },
-            },
-          },
-        },
-        orderBy: {
-          examDate: "asc",
-        },
+          })
+        }
+      } catch (error) {
+        console.error("Error fetching student exams:", error)
       }
-    } else if (role === "student" && currentUser.role === "student") {
-      // Students see exams assigned to them that haven't started yet
-      query = {
-        where: {
-          assignedTo: {
-            some: {
-              userId: currentUser.id,
+    } else if (user.role === "teacher") {
+      // For teachers, get their own exams that haven't started yet
+      try {
+        exams = await prisma.exam.findMany({
+          where: {
+            userId: user.id,
+            examDate: {
+              gt: now,
             },
           },
-          OR: [
-            {
-              // Exams with a future date
-              examDate: {
-                gt: now,
-              },
-            },
-            {
-              // Exams with today's date but future time
-              examDate: now.toISOString().split("T")[0],
-              examTime: {
-                gt: now.toTimeString().substring(0, 5), // HH:MM format
-              },
-            },
-            {
-              // Exams with no date (always show these)
-              examDate: null,
-            },
-          ],
-        },
-        include: {
-          user: {
-            select: {
-              id: true,
-              name: true,
-              username: true,
-            },
+          orderBy: {
+            examDate: "asc",
           },
-          examQuestions: {
-            include: {
-              question: {
-                select: {
-                  id: true,
-                  text: true,
-                  type: true,
-                  points: true,
-                  options: true,
-                  // Don't include correctAnswer for students
-                },
-              },
-            },
-          },
-        },
-        orderBy: {
-          examDate: "asc",
-        },
+        })
+      } catch (error) {
+        console.error("Error fetching teacher exams:", error)
       }
-    } else {
-      return NextResponse.json({ error: "Зөвшөөрөлгүй" }, { status: 403 })
     }
-
-    const exams = await prisma.exam.findMany(query)
 
     return NextResponse.json(exams)
   } catch (error) {
     console.error("Error fetching upcoming exams:", error)
-    return NextResponse.json(
-      { error: "Ирэх шалгалтуудыг татах үед алдаа гарлаа", details: error.message },
-      { status: 500 },
-    )
+    return NextResponse.json({ message: "Error fetching upcoming exams" }, { status: 500 })
   }
 }

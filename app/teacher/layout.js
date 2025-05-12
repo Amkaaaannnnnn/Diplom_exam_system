@@ -1,9 +1,9 @@
 import { redirect } from "next/navigation"
-import { getCurrentUser } from "@/lib/auth"
+import { getServerUser } from "@/lib/auth-server"
 import TeacherSidebar from "@/components/teacher-sidebar"
 
 export default async function TeacherLayout({ children }) {
-  const user = await getCurrentUser()
+  const user = await getServerUser()
 
   if (!user) {
     redirect("/login")

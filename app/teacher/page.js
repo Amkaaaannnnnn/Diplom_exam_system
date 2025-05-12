@@ -15,7 +15,6 @@ export default async function TeacherDashboard() {
     redirect("/login")
   }
 
-  // Багшийн шалгалтуудыг татах
   const exams = await prisma.exam.findMany({
     where: {
       userId: user.id,

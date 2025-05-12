@@ -1,207 +1,311 @@
 import { NextResponse } from "next/server"
-import { cookies } from "next/headers"
 import { prisma } from "@/lib/prisma"
-import { verifyJWT } from "@/lib/auth"
+import { getServerUser } from "@/lib/auth-server"
 
 export async function GET(request, { params }) {
   try {
-    // Get the current user from cookies
-    const cookieStore = await cookies()
-    const token = cookieStore.get("token")?.value
-
-    if (!token) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
-    }
-
-    const decoded = await verifyJWT(token)
-    if (!decoded || !decoded.id) {
-      return NextResponse.json({ error: "Invalid token" }, { status: 401 })
-    }
-
-    const user = await prisma.user.findUnique({
-      where: { id: decoded.id },
-    })
-
-    if (!user) {
-      return NextResponse.json({ error: "User not found" }, { status: 401 })
-    }
+    console.log("GET /api/exams/[id] - Start", new Date().toISOString())
 
     const { id } = params
+    console.log("GET /api/exams/[id] - Exam ID:", id)
 
-    // Get the exam
-    const exam = await prisma.exam.findUnique({
+    // Get the current user
+    const user = await getServerUser()
+    if (!user) {
+      console.log("GET /api/exams/[id] - No user found")
+      return NextResponse.json({ error: "Нэвтрээгүй байна" }, { status: 401 })
+    }
+
+    console.log("GET /api/exams/[id] - User found:", user.id, user.role)
+
+    // Find the exam with appropriate includes based on user role
+    const examQuery = {
       where: { id },
       include: {
         user: {
           select: {
             id: true,
             name: true,
+            username: true,
+            role: true,
           },
         },
-        subject: true,
-        questions: {
-          select: {
-            id: true,
-            text: true,
-            type: true,
-            points: true,
+        assignedTo: {
+          include: {
+            user: {
+              select: {
+                id: true,
+                name: true,
+                username: true,
+                className: true,
+              },
+            },
           },
         },
       },
-    })
-
-    if (!exam) {
-      return NextResponse.json({ error: "Exam not found" }, { status: 404 })
     }
 
-    // Check if user is admin, the teacher who created the exam, or a student assigned to the exam
+    // Add examQuestions for all users, but limit what students can see
     if (user.role === "student") {
-      // Check if the student is assigned to this exam
-      const assignment = await prisma.examAssignment.findFirst({
+      examQuery.include.examQuestions = {
+        include: {
+          question: {
+            select: {
+              id: true,
+              text: true,
+              type: true,
+              options: true,
+              points: true,
+              // Don't include correctAnswer for students
+            },
+          },
+        },
+      }
+    } else {
+      examQuery.include.examQuestions = {
+        include: {
+          question: true,
+        },
+      }
+    }
+
+    // For students, also check if they have a result for this exam
+    let studentResult = null
+    if (user.role === "student") {
+      studentResult = await prisma.result.findFirst({
         where: {
           examId: id,
           userId: user.id,
         },
       })
-
-      if (!assignment) {
-        return NextResponse.json({ error: "Unauthorized" }, { status: 403 })
-      }
-    } else if (user.role === "teacher" && exam.user.id !== user.id) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 403 })
     }
 
+    const exam = await prisma.exam.findUnique(examQuery)
+
+    if (!exam) {
+      console.log("GET /api/exams/[id] - Exam not found")
+      return NextResponse.json({ error: "Шалгалт олдсонгүй" }, { status: 404 })
+    }
+
+    console.log("GET /api/exams/[id] - Exam found, checking permissions...")
+
+    // Check permissions
+    if (user.role === "teacher" && exam.userId !== user.id) {
+      console.log("GET /api/exams/[id] - Teacher not owner of exam")
+      return NextResponse.json({ error: "Энэ шалгалтыг харах эрх байхгүй байна" }, { status: 403 })
+    }
+
+    if (user.role === "student") {
+      // Check if the exam is assigned to this student
+      const isAssigned = exam.assignedTo.some((assignment) => assignment.userId === user.id)
+
+      if (!isAssigned) {
+        console.log("GET /api/exams/[id] - Exam not assigned to student")
+        return NextResponse.json({ error: "Энэ шалгалтыг харах эрх байхгүй байна" }, { status: 403 })
+      }
+
+      // Add the result information to the response for students
+      exam.studentResult = studentResult
+    }
+
+    console.log("GET /api/exams/[id] - Returning exam data")
     return NextResponse.json(exam)
   } catch (error) {
     console.error("Error fetching exam:", error)
-    return NextResponse.json({ error: "Failed to fetch exam" }, { status: 500 })
+    return NextResponse.json({ error: `Шалгалтын мэдээлэл татахад алдаа гарлаа: ${error.message}` }, { status: 500 })
   }
 }
 
-export async function PUT(request, { params }) {
+// Update an exam
+export async function PUT(req, { params }) {
   try {
-    // Get the current user from cookies
-    const cookieStore = await cookies()
-    const token = cookieStore.get("token")?.value
-
-    if (!token) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
+    const { id } = params
+    if (!id) {
+      return NextResponse.json({ error: "Шалгалтын ID заавал шаардлагатай" }, { status: 400 })
     }
 
-    const decoded = await verifyJWT(token)
-    if (!decoded || !decoded.id) {
-      return NextResponse.json({ error: "Invalid token" }, { status: 401 })
+    // Check if the current user is an admin or teacher
+    const user = await getServerUser()
+
+    if (!user || (user.role !== "admin" && user.role !== "teacher")) {
+      return NextResponse.json({ error: "Зөвшөөрөлгүй" }, { status: 401 })
     }
 
-    const user = await prisma.user.findUnique({
-      where: { id: decoded.id },
+    const body = await req.json()
+    const { title, description, subject, className, duration, totalPoints, examDate, examTime, questions } = body
+
+    // Validate required fields
+    if (!title || !subject || !className) {
+      return NextResponse.json({ error: "Шаардлагатай талбарууд дутуу байна" }, { status: 400 })
+    }
+
+    // Check if the exam exists
+    const existingExam = await prisma.exam.findUnique({
+      where: { id },
     })
 
-    if (!user) {
-      return NextResponse.json({ error: "User not found" }, { status: 401 })
+    if (!existingExam) {
+      return NextResponse.json({ error: "Шалгалт олдсонгүй" }, { status: 404 })
     }
 
-    // Only teachers and admins can update exams
-    if (user.role !== "teacher" && user.role !== "admin") {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 403 })
+    // Check if the user has permission to update this exam
+    if (user.role === "teacher" && existingExam.userId !== user.id) {
+      return NextResponse.json({ error: "Энэ шалгалтыг засах эрхгүй байна" }, { status: 403 })
     }
 
-    const { id } = params
-    const data = await request.json()
+    // Update the exam with questions in a transaction
+    const updatedExam = await prisma.$transaction(async (tx) => {
+      // Update the exam
+      const exam = await tx.exam.update({
+        where: { id },
+        data: {
+          title,
+          description,
+          subject,
+          className,
+          duration: duration ? Number.parseInt(duration) : 30,
+          totalPoints: totalPoints ? Number.parseInt(totalPoints) : 100,
+          examDate: examDate ? new Date(examDate) : null,
+          examTime,
+        },
+      })
 
-    // Get the exam
-    const exam = await prisma.exam.findUnique({
-      where: { id },
+      // Delete existing questions
+      await tx.question.deleteMany({
+        where: { examId: id },
+      })
+
+      // Create new questions
+      if (questions && questions.length > 0) {
+        for (const q of questions) {
+          await tx.question.create({
+            data: {
+              text: q.text,
+              type: q.type,
+              points: q.points || 1,
+              options: q.options || [],
+              correctAnswer: q.correctAnswer,
+              userId: user.id, // Багшийн ID-г нэмж өгөх
+              exam: {
+                connect: { id: exam.id },
+              },
+            },
+          })
+        }
+      }
+
+      return exam
+    })
+
+    // Fetch the complete updated exam with questions
+    const completeExam = await prisma.exam.findUnique({
+      where: { id: updatedExam.id },
       include: {
-        user: {
-          select: {
-            id: true,
+        user: true,
+        assignedTo: {
+          include: {
+            user: {
+              select: {
+                id: true,
+                name: true,
+                username: true,
+              },
+            },
           },
         },
       },
     })
 
-    if (!exam) {
-      return NextResponse.json({ error: "Exam not found" }, { status: 404 })
-    }
-
-    // Check if user is admin or the teacher who created the exam
-    if (user.role !== "admin" && exam.user.id !== user.id) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 403 })
-    }
-
-    // Update the exam
-    const updatedExam = await prisma.exam.update({
-      where: { id },
-      data,
+    // Fetch questions separately
+    const examQuestions = await prisma.question.findMany({
+      where: { examId: id },
     })
 
-    return NextResponse.json(updatedExam)
+    // Add questions to the response
+    completeExam.questions = examQuestions
+
+    return NextResponse.json(completeExam)
   } catch (error) {
     console.error("Error updating exam:", error)
-    return NextResponse.json({ error: "Failed to update exam" }, { status: 500 })
+    return NextResponse.json(
+      {
+        error: "Шалгалт шинэчлэх үед алдаа гарлаа",
+        details: error.message,
+      },
+      { status: 500 },
+    )
   }
 }
 
-export async function DELETE(request, { params }) {
+// Delete an exam
+export async function DELETE(req, { params }) {
   try {
-    // Get the current user from cookies
-    const cookieStore = await cookies()
-    const token = cookieStore.get("token")?.value
-
-    if (!token) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
-    }
-
-    const decoded = await verifyJWT(token)
-    if (!decoded || !decoded.id) {
-      return NextResponse.json({ error: "Invalid token" }, { status: 401 })
-    }
-
-    const user = await prisma.user.findUnique({
-      where: { id: decoded.id },
-    })
-
-    if (!user) {
-      return NextResponse.json({ error: "User not found" }, { status: 401 })
-    }
-
-    // Only teachers and admins can delete exams
-    if (user.role !== "teacher" && user.role !== "admin") {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 403 })
-    }
-
     const { id } = params
+    if (!id) {
+      return NextResponse.json({ error: "Шалгалтын ID заавал шаардлагатай" }, { status: 400 })
+    }
 
-    // Get the exam
-    const exam = await prisma.exam.findUnique({
+    // Check if the current user is an admin or teacher
+    const user = await getServerUser()
+
+    if (!user || (user.role !== "admin" && user.role !== "teacher")) {
+      return NextResponse.json({ error: "Зөвшөөрөлгүй" }, { status: 401 })
+    }
+
+    // Check if the exam exists
+    const existingExam = await prisma.exam.findUnique({
       where: { id },
-      include: {
-        user: {
-          select: {
-            id: true,
-          },
+    })
+
+    if (!existingExam) {
+      return NextResponse.json({ error: "Шалгалт олдсонгүй" }, { status: 404 })
+    }
+
+    // Check if the user has permission to delete this exam
+    if (user.role === "teacher" && existingExam.userId !== user.id) {
+      return NextResponse.json({ error: "Энэ шалгалтыг устгах эрхгүй байна" }, { status: 403 })
+    }
+
+    // Delete the exam and related data in a transaction
+    await prisma.$transaction(async (tx) => {
+      // Delete exam results
+      await tx.result.deleteMany({
+        where: {
+          examId: id,
         },
-      },
+      })
+
+      // Delete exam assignments
+      await tx.examAssignment.deleteMany({
+        where: {
+          examId: id,
+        },
+      })
+
+      // Delete questions
+      await tx.question.deleteMany({
+        where: {
+          examId: id,
+        },
+      })
+
+      // Delete the exam
+      await tx.exam.delete({
+        where: {
+          id,
+        },
+      })
     })
 
-    if (!exam) {
-      return NextResponse.json({ error: "Exam not found" }, { status: 404 })
-    }
-
-    // Check if user is admin or the teacher who created the exam
-    if (user.role !== "admin" && exam.user.id !== user.id) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 403 })
-    }
-
-    // Delete the exam
-    await prisma.exam.delete({
-      where: { id },
-    })
-
-    return NextResponse.json({ success: true })
+    return NextResponse.json({ success: true, message: "Шалгалт амжилттай устгагдлаа" })
   } catch (error) {
     console.error("Error deleting exam:", error)
-    return NextResponse.json({ error: "Failed to delete exam" }, { status: 500 })
+    return NextResponse.json(
+      {
+        error: "Шалгалт устгах үед алдаа гарлаа",
+        details: error.message,
+      },
+      { status: 500 },
+    )
   }
 }
