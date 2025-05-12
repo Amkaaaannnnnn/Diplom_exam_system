@@ -19,20 +19,27 @@ export default async function EditExam({ params }) {
   const examId = params.id
 
   try {
-    // Шалгалтын мэдээллийг татах
+    // Шалгалтын мэдээллийг татах (examQuestions-оор дамжуулж асуулт татна)
     const exam = await prisma.exam.findUnique({
       where: {
         id: examId,
-        userId: user.id, // Зөвхөн өөрийн үүсгэсэн шалгалтыг засах
+        userId: user.id,
       },
       include: {
-        questions: true,
+        examQuestions: {
+          include: {
+            question: true,
+          },
+        },
       },
     })
 
     if (!exam) {
       redirect("/teacher/exams")
     }
+
+    // exam.questions гэж нэрлэхэд тохируулах (useForm-д дамжуулахад хялбар)
+    const questions = exam.examQuestions.map((eq) => eq.question)
 
     return (
       <div className="p-6">
@@ -43,7 +50,7 @@ export default async function EditExam({ params }) {
           <h1 className="text-2xl font-bold">Шалгалт засах</h1>
         </div>
 
-        <ExamForm exam={exam} />
+        <ExamForm exam={{ ...exam, questions }} />
       </div>
     )
   } catch (error) {

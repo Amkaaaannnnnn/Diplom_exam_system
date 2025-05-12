@@ -16,17 +16,21 @@ export default async function TeacherExams() {
   }
 
   // Багшийн үүсгэсэн шалгалтуудыг татах
-  const exams = await prisma.exam.findMany({
-    where: {
-      userId: user.id,
-    },
-    include: {
-      questions: true, // Даалгаврын тоог харуулахын тулд
-    },
-    orderBy: {
-      createdAt: "desc",
-    },
-  })
+const exams = await prisma.exam.findMany({
+  where: {
+    userId: user.id,
+  },
+  include: {
+    examQuestions: { include: { question: true }, },
+    assignedTo: true,
+    Result: true,
+  },
+  orderBy: {
+    createdAt: "desc",
+  },
+})
+
+
 
   return (
     <div className="p-6">
@@ -55,19 +59,19 @@ export default async function TeacherExams() {
             <thead className="bg-gray-50">
               <tr>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  ШАЛГАЛТЫН НЭР
+                  Шалгалтын нэр
                 </th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  ХИЧЭЭЛ
+                  Хичээл
                 </th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  ОГНОО
+                  Огноо
                 </th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  ДААЛГАВРЫН ТОО
+                  Асуултын тоо
                 </th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  ҮЙЛДЭЛ
+                  Үйлдэл
                 </th>
               </tr>
             </thead>
@@ -83,7 +87,8 @@ export default async function TeacherExams() {
                   <td className="px-6 py-4 whitespace-nowrap">
                     {exam.examDate ? new Date(exam.examDate).toISOString().split("T")[0] : "-"}
                   </td>
-                  <td className="px-6 py-4 whitespace-nowrap">{exam.questions.length}</td>
+                  <td className="px-6 py-4 whitespace-nowrap">{exam.examQuestions.length}</td>
+
                   <td className="px-6 py-4 whitespace-nowrap">
                     <div className="flex space-x-2">
                       <Link

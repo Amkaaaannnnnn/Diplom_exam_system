@@ -14,7 +14,7 @@ export default function CompletedExams() {
   useEffect(() => {
     async function fetchExams() {
       try {
-        const response = await fetch("/api/exams?status=completed&role=teacher")
+        const response = await fetch("/api/exams/completed?role=teacher")
         if (response.ok) {
           const data = await response.json()
           setExams(data)
@@ -31,64 +31,12 @@ export default function CompletedExams() {
     fetchExams()
   }, [])
 
-  // Dummy data for demonstration - updated to match teacher input fields
-  const dummyExams = [
-    {
-      id: 1,
-      title: "2-р улирлын шалгалт",
-      description: "Алгебрын үндсэн ойлголтууд, тэгшитгэлүүд",
-      subject: "Математик",
-      className: "10а анги",
-      duration: 40,
-      totalPoints: 100,
-      examDate: "2025-09-10",
-      examTime: "10:00",
-      questions: Array(30).fill({}), // 30 questions
-      completedCount: 30,
-      totalStudents: 30,
-      averageScore: 82,
-    },
-    {
-      id: 2,
-      title: "Хагас жилийн шалгалт",
-      description: "Хүчний хуулиуд, энергийн хадгалалт",
-      subject: "Физик",
-      className: "7 анги",
-      duration: 40,
-      totalPoints: 100,
-      examDate: "2025-08-15",
-      examTime: "09:00",
-      questions: Array(25).fill({}), // 25 questions
-      completedCount: 28,
-      totalStudents: 28,
-      averageScore: 75,
-    },
-    {
-      id: 3,
-      title: "Улирлын шалгалт",
-      description: "Химийн урвалууд, хүчил, суурь",
-      subject: "Химия",
-      className: "9 анги",
-      duration: 40,
-      totalPoints: 100,
-      examDate: "2025-08-20",
-      examTime: "11:00",
-      questions: Array(20).fill({}), // 20 questions
-      completedCount: 25,
-      totalStudents: 25,
-      averageScore: 79,
-    },
-  ]
-
-  // Use dummy data if no exams are fetched
-  const displayExams = exams.length > 0 ? exams : dummyExams
-
   // Get unique subjects and grades for filters
-  const subjects = ["Бүгд", ...new Set(displayExams.map((exam) => exam.subject))]
-  const grades = ["Бүгд", ...new Set(displayExams.map((exam) => exam.className))]
+  const subjects = ["Бүгд", ...new Set(exams.map((exam) => exam.subject).filter(Boolean))]
+  const grades = ["Бүгд", ...new Set(exams.map((exam) => exam.className).filter(Boolean))]
 
   // Filter exams based on search term and filters
-  const filteredExams = displayExams.filter((exam) => {
+  const filteredExams = exams.filter((exam) => {
     const matchesSearch =
       exam.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
       exam.subject.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -237,7 +185,7 @@ export default function CompletedExams() {
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap">
                         <div className="text-sm text-gray-900">
-                          {new Date(exam.examDate).toLocaleDateString("mn-MN")}
+                          {exam.examDate ? new Date(exam.examDate).toLocaleDateString("mn-MN") : "Тодорхойгүй"}
                         </div>
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap">

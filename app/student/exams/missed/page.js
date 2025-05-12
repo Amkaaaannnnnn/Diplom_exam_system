@@ -17,8 +17,8 @@ export default async function MissedExams() {
         <div className="bg-white p-6 rounded-lg shadow-sm border border-gray-200">
           <div className="flex items-start mb-4">
             <div>
-              <h3 className="font-bold text-lg">Химия</h3>
-              <p className="text-gray-600 text-sm">10а анги | Нэгж хичээлийн шалгалт | Органик химия</p>
+              <h3 className="font-bold text-lg">Хими</h3>
+              <p className="text-gray-600 text-sm">10а анги | Нэгж хичээлийн шалгалт | Органик хими</p>
             </div>
           </div>
 
@@ -45,7 +45,7 @@ export default async function MissedExams() {
           <div className="flex items-start mb-4">
             <div>
               <h3 className="font-bold text-lg">Биологи</h3>
-              <p className="text-gray-600 text-sm">10а анги | Ярьцын шалгалт | Ургамал судлал</p>
+              <p className="text-gray-600 text-sm">10а анги | Явцын шалгалт | Ургамал судлал</p>
             </div>
           </div>
 

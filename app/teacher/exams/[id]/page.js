@@ -17,14 +17,17 @@ export default async function ViewExam({ params }) {
 
   const examId = params.id
 
-  // Шалгалтын мэдээллийг татах
   const exam = await prisma.exam.findUnique({
     where: {
       id: examId,
-      userId: user.id, // Зөвхөн өөрийн үүсгэсэн шалгалтыг харах
+      userId: user.id,
     },
     include: {
-      questions: true,
+      examQuestions: {
+        include: {
+          question: true,
+        },
+      },
       assignedTo: {
         include: {
           user: {
@@ -43,10 +46,11 @@ export default async function ViewExam({ params }) {
     redirect("/teacher/exams")
   }
 
-  // Шалгалтын дүнгийн мэдээллийг татах - ExamResult модель байгаа эсэхийг шалгах
+  const questions = exam.examQuestions.map((eq) => eq.question)
+
   let results = []
   try {
-    results = await prisma.examResult.findMany({
+    results = await prisma.result.findMany({
       where: {
         examId: examId,
       },
@@ -62,7 +66,6 @@ export default async function ViewExam({ params }) {
     })
   } catch (error) {
     console.error("Шалгалтын дүнгийн мэдээллийг татахад алдаа гарлаа:", error)
-    // Алдаа гарсан ч хуудсыг үргэлжлүүлэн харуулна
   }
 
   return (
@@ -146,7 +149,7 @@ export default async function ViewExam({ params }) {
           <div className="space-y-2">
             <div>
               <span className="text-gray-500">Даалгаврын тоо:</span>{" "}
-              <span className="font-medium">{exam.questions.length}</span>
+              <span className="font-medium">{questions.length}</span>
             </div>
             <div>
               <span className="text-gray-500">Оноогдсон сурагчид:</span>{" "}
@@ -177,24 +180,21 @@ export default async function ViewExam({ params }) {
 
       <div className="bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden mb-8">
         <div className="p-4 border-b border-gray-200">
-          <h2 className="text-lg font-medium">Даалгаврууд ({exam.questions.length})</h2>
-        </div>
-        <div className="divide-y divide-gray-200">
-          {exam.questions.map((question, index) => (
-            <div key={question.id} className="p-4">
-              <div className="flex justify-between">
-                <h3 className="font-medium">
-                  Даалгавар #{index + 1} ({question.points} оноо)
-                </h3>
-                <span className="text-sm text-gray-500">
-                  {question.type === "select"
-                    ? "Нэг сонголттой"
-                    : question.type === "multiselect"
-                      ? "Олон сонголттой"
-                      : question.type === "text"
-                        ? "Текст"
-                        : "Тоон"}
-                </span>
+      <h2 className="text-lg font-medium">Даалгаврууд ({questions.length})</h2>
+
+{questions.map((question, index) => (
+  <div key={question.id} className="p-4">
+    <div className="flex justify-between">
+      <h3 className="font-medium">Даалгавар #{index + 1} ({question.points} оноо)</h3>
+            <span className="text-sm text-gray-500">
+  {question.type === "select"
+    ? "Нэг сонголттой"
+    : question.type === "multiselect"
+      ? "Олон сонголттой"
+      : question.type === "fill"
+        ? "Нөхөх"
+        : ""}
+</span>
               </div>
               <p className="mt-2 mb-4">{question.text}</p>
 
@@ -224,7 +224,8 @@ export default async function ViewExam({ params }) {
                 </div>
               )}
 
-              {(question.type === "text" || question.type === "number") && (
+
+              {question.type === "fill" && (
                 <div className="mt-2">
                   <div className="font-medium text-sm text-gray-500 mb-1">Зөв хариулт:</div>
                   <div className="p-2 rounded-md border border-green-500 bg-green-50 inline-block">

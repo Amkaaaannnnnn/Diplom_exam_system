@@ -9,22 +9,23 @@ datasource db {
 }
 
 model User {
-  id        String   @id @default(uuid())
-  name      String
-  username  String   @unique
-  email     String
-  register  String?
-  role      String
-  className String?
-  subject   String?
-  password  String
-  status    String
-  createdAt DateTime @default(now()) @map("createdat")
-  Exam        Exam[]
-  Notification Notification[]
-  Result      Result[]
-  assignedExams ExamAssignment[]
-  questions  Question[]  // Багш нарын үүсгэсэн даалгавар
+  id             String           @id @default(uuid())
+  name           String
+  username       String           @unique
+  email          String
+  register       String?
+  role           String
+  className      String?
+  subject        String?
+  password       String
+  status         String
+  createdAt      DateTime         @default(now()) @map("createdat")
+  Exam           Exam[]
+  Notification   Notification[]
+  Result         Result[]
+  assignedExams  ExamAssignment[]
+  questions      Question[]
+  updatedResults ResultHistory[]  @relation("UserUpdatedResults")
 
   @@map("user")
 }
@@ -37,68 +38,74 @@ model Subject {
 }
 
 model Exam {
-  id          String   @id @default(uuid())
+  id          String          @id @default(uuid())
   title       String
   description String?
   subject     String
+  subjectType String?
   className   String?
-  duration    Int      @default(30)
-  totalPoints Int      @default(100)
+  duration    Int             @default(30)
+  totalPoints Int             @default(100)
   examDate    DateTime?
   examTime    String?
-  createdAt   DateTime @default(now()) @map("createdat")
-  user        User     @relation(fields: [userId], references: [id])
-  userId      String   @map("userid")
-  Result      Result[]
-  questions   Question[] @relation("ExamQuestions")
+  createdAt   DateTime        @default(now()) @map("createdat")
+  userId      String          @map("userid")
+  user        User            @relation(fields: [userId], references: [id])
   assignedTo  ExamAssignment[]
-  // Add this relation field to fix the error
-  questionItems Question[] @relation("ExamQuestion")
+  Result      Result[]
+
+  examQuestions ExamQuestion[] // ← many-to-many холбоо
 
   @@map("exam")
 }
 
+
 model ExamAssignment {
-  id        String   @id @default(uuid())
-  examId    String   @map("examid")
-  userId    String   @map("userid")
-  status    String   @default("PENDING") // PENDING, COMPLETED, MISSED
-  createdAt DateTime @default(now()) @map("createdat")
-  completedAt DateTime? 
-  exam      Exam     @relation(fields: [examId], references: [id])
-  user      User     @relation(fields: [userId], references: [id])
+  id          String    @id @default(uuid())
+  examId      String    @map("examid")
+  userId      String    @map("userid")
+  status      String    @default("PENDING") // PENDING, COMPLETED, MISSED
+  createdAt   DateTime  @default(now()) @map("createdat")
+  completedAt DateTime?
+  exam        Exam      @relation(fields: [examId], references: [id])
+  user        User      @relation(fields: [userId], references: [id])
 
   @@unique([examId, userId])
   @@map("exam_assignment")
 }
 
 model Question {
-  id            String   @id @default(uuid())
+  id            String @id @default(uuid())
   text          String
-  type          String   // select, multiselect, text, number
-  points        Int      @default(1)
-  options       Json?    // [{id: "A", text: "Option A"}, ...]
-  correctAnswer Json?    // "A" or ["A", "B"] or "text answer" or 42
-  
-  // Шинээр нэмсэн талбарууд
-  className     String?  // Анги (жишээ нь: 7, 8, 9)
-  category      String?  // Сэдэв (жишээ нь: Тэгшитгэл, Элемент, Хөдөлгөөн)
-  difficulty    String?  // Түвшин (жишээ нь: Хөнгөн, Хүнд, Дунд, Маш хүнд)
-  isInBank      Boolean  @default(true) // Даалгаварын санд байгаа эсэх
-  
-  // Холбоосууд
-  exams         Exam[]   @relation("ExamQuestions") // Олон шалгалтад ашиглаж болно
-  createdBy     User     @relation(fields: [userId], references: [id]) // Багшийн мэдээлэл
-  userId        String   @map("userid")
-  
-  // Шалгалтад ашиглагдах талбарууд
-  exam          Exam?    @relation("ExamQuestion", fields: [examId], references: [id], onDelete: Cascade)
-  examId        String?  @map("examid")
-  
+  type          String 
+  points        Int    @default(1)
+  options       Json?
+  correctAnswer Json?
+  className     String?
+  category      String?
+  difficulty    String?
+  isInBank      Boolean @default(true)
   createdAt     DateTime @default(now()) @map("createdat")
+
+  userId        String   @map("userid")
+  createdBy     User     @relation(fields: [userId], references: [id])
+
+  examQuestions ExamQuestion[] // ← many-to-many холбоо
 
   @@map("question")
 }
+
+model ExamQuestion {
+  id         String   @id @default(uuid())
+  exam       Exam     @relation(fields: [examId], references: [id])
+  examId     String   @map("examid")
+  question   Question @relation(fields: [questionId], references: [id])
+  questionId String   @map("questionid")
+
+  @@unique([examId, questionId])
+  @@map("exam_question")
+}
+
 
 model Notification {
   id        String   @id @default(uuid())
@@ -112,17 +119,31 @@ model Notification {
 }
 
 model Result {
-  id          String   @id @default(uuid())
-  score       Float
+  id           String   @id @default(uuid())
+  score        Float
   earnedPoints Int?
   totalPoints  Int?
-  answers     Json?    // Шинээр нэмсэн талбар - хариултуудыг хадгалах
-  submittedAt DateTime @default(now())
-  createdAt   DateTime @default(now()) @map("createdat")
-  user        User     @relation(fields: [userId], references: [id])
-  userId      String   @map("userid")
-  exam        Exam     @relation(fields: [examId], references: [id])
-  examId      String   @map("examid")
+  answers      Json?
+  startedAt    DateTime?             
+  submittedAt  DateTime @default(now())
+  createdAt    DateTime @default(now()) @map("createdat")
+  user         User     @relation(fields: [userId], references: [id])
+  userId       String   @map("userid")
+  exam         Exam     @relation(fields: [examId], references: [id])
+  examId       String   @map("examid")
 
-  @@map("result")
+  histories ResultHistory[]
+}
+
+
+model ResultHistory {
+  id            String   @id @default(uuid())
+  resultId      String
+  updatedById   String
+  previousScore Float
+  newScore      Float
+  updatedAt     DateTime @default(now())
+
+  result    Result @relation(fields: [resultId], references: [id])
+  updatedBy User   @relation(fields: [updatedById], references: [id], name: "UserUpdatedResults")
 }

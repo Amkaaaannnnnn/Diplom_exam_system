@@ -63,6 +63,7 @@ export async function POST(req, { params }) {
       return NextResponse.json({
         message: "You have already taken this exam",
         resultId: existingResult.id,
+        id: existingResult.id,
       })
     }
 
@@ -70,12 +71,28 @@ export async function POST(req, { params }) {
     const exam = await prisma.exam.findUnique({
       where: { id: examId },
       include: {
-        questions: true,
+        examQuestions: {
+          include: {
+            question: true,
+          },
+        },
       },
     })
 
     if (!exam) {
       return NextResponse.json({ error: "Exam not found" }, { status: 404 })
+    }
+
+    // Check if the exam date has passed
+    const examDate = new Date(exam.examDate)
+    if (exam.examTime) {
+      const [hours, minutes] = exam.examTime.split(":").map(Number)
+      examDate.setHours(hours, minutes, 0)
+    }
+
+    const currentTime = new Date()
+    if (currentTime < examDate) {
+      return NextResponse.json({ error: "Exam has not started yet" }, { status: 403 })
     }
 
     // Get the answers from the request body
@@ -86,7 +103,8 @@ export async function POST(req, { params }) {
     let totalPoints = 0
     const questionResults = []
 
-    for (const question of exam.questions) {
+    for (const examQuestion of exam.examQuestions) {
+      const question = examQuestion.question
       totalPoints += question.points
       const studentAnswer = answers[question.id]
       let isCorrect = false
@@ -107,15 +125,12 @@ export async function POST(req, { params }) {
           Array.isArray(studentAnswer) &&
           studentAnswer.length === correctAnswers.length &&
           studentAnswer.every((a) => correctAnswers.includes(a))
-      } else if (question.type === "text") {
+      } else if (question.type === "text" || question.type === "number" || question.type === "fill") {
         // For text, do a case-insensitive comparison
         isCorrect =
           studentAnswer &&
           question.correctAnswer &&
           studentAnswer.toLowerCase().trim() === question.correctAnswer.toLowerCase().trim()
-      } else if (question.type === "number") {
-        // For number, convert to number and compare
-        isCorrect = Number(studentAnswer) === Number(question.correctAnswer)
       }
 
       // Add points if the answer is correct
@@ -143,6 +158,8 @@ export async function POST(req, { params }) {
         earnedPoints: earnedPoints,
         totalPoints: totalPoints,
         answers: questionResults, // JSON хэлбэрээр хадгалах
+        startedAt: new Date(Date.now() - exam.duration * 60 * 1000), // Approximate start time
+        submittedAt: new Date(),
       },
     })
 
@@ -159,6 +176,7 @@ export async function POST(req, { params }) {
 
     return NextResponse.json({
       success: true,
+      id: result.id,
       resultId: result.id,
       score: percentageScore,
       earnedPoints,

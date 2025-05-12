@@ -86,7 +86,7 @@ async function main() {
     where: { username: "STU0001" },
     update: {},
     create: {
-      username: "STU0001",
+      username: "ST0001",
       password: hashedPassword,
       name: "Сурагч 1",
       email: "student1@example.com",
@@ -104,7 +104,7 @@ async function main() {
     where: { username: "STU0002" },
     update: {},
     create: {
-      username: "STU0002",
+      username: "STS0002",
       password: hashedPassword,
       name: "Сурагч 2",
       email: "student2@example.com",

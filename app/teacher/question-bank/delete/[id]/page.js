@@ -76,7 +76,7 @@ export default function DeleteQuestion({ params }) {
     return (
       <div className="p-6">
         <div className="bg-yellow-100 border border-yellow-400 text-yellow-700 px-4 py-3 rounded mb-4">
-          Даалгавар олдсонгүй
+          Асуулт олдсонгүй
         </div>
         <Link href="/teacher/question-bank" className="bg-gray-500 hover:bg-gray-600 text-white px-4 py-2 rounded-md">
           Буцах
@@ -97,14 +97,14 @@ export default function DeleteQuestion({ params }) {
       <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
         <div className="bg-red-50 border border-red-200 rounded-md p-4 mb-6">
           <h2 className="text-lg font-medium text-red-800 mb-2">Анхааруулга</h2>
-          <p className="text-red-700">Та дараах даалгаврыг устгах гэж байна. Энэ үйлдлийг буцаах боломжгүй.</p>
+          <p className="text-red-700">Та дараах асуултыг устгах гэж байна. Энэ үйлдлийг буцаах боломжгүй.</p>
         </div>
 
         <div className="mb-6">
-          <h3 className="text-md font-medium mb-2">Даалгаврын дэлгэрэнгүй мэдээлэл:</h3>
+          <h3 className="text-md font-medium mb-2">Асуултын дэлгэрэнгүй мэдээлэл:</h3>
           <div className="grid grid-cols-1 gap-4">
             <div>
-              <p className="text-sm text-gray-500">Даалгаврын текст:</p>
+              <p className="text-sm text-gray-500">Асуулт:</p>
               <p className="font-medium">{question.text}</p>
             </div>
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -119,10 +119,8 @@ export default function DeleteQuestion({ params }) {
                     ? "Нэг сонголттой"
                     : question.type === "multiselect"
                       ? "Олон сонголттой"
-                      : question.type === "text"
-                        ? "Текст"
-                        : question.type === "number"
-                          ? "Тоон"
+                       : question.type === "fill"
+                          ? "Нөхөх"
                           : question.type}
                 </p>
               </div>
@@ -133,7 +131,7 @@ export default function DeleteQuestion({ params }) {
             </div>
             {question.options && (
               <div>
-                <p className="text-sm text-gray-500">Сонголтууд:</p>
+                <p className="text-sm text-gray-500">Сонголтын төрөл:</p>
                 <div className="ml-4">
                   {question.options.map((option, index) => (
                     <p key={index} className="font-medium">

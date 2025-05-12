@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { useRouter } from "next/navigation"
 import { Plus, Trash2 } from "lucide-react"
 
@@ -8,10 +8,19 @@ export default function QuestionForm({ question = null }) {
   const router = useRouter()
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState("")
+  const [subjects, setSubjects] = useState([])
+
+ 
+  const convertOldTypeToNew = (oldType) => {
+    if (oldType === "text" || oldType === "number") {
+      return "fill"
+    }
+    return oldType
+  }
 
   const [formData, setFormData] = useState({
     text: question?.text || "",
-    type: question?.type || "select",
+    type: question ? convertOldTypeToNew(question.type) : "select",
     points: question?.points || 1,
     options: question?.options || [
       { id: "A", text: "" },
@@ -22,13 +31,52 @@ export default function QuestionForm({ question = null }) {
     correctAnswer: question?.correctAnswer || "A",
     className: question?.className || "",
     category: question?.category || "",
+    subject: question?.subject || "", 
     difficulty: question?.difficulty || "Дунд",
-    isInBank: question?.isInBank !== false, // Хэрэв undefined бол true
+    isInBank: question?.isInBank !== false, 
   })
+
+  useEffect(() => {
+    const fetchSubjects = async () => {
+      try {
+        const response = await fetch("/api/subjects")
+        if (response.ok) {
+          const data = await response.json()
+          setSubjects(data)
+        } else {
+          console.error("Хичээлүүдийг татахад алдаа гарлаа:", response.status)
+        }
+      } catch (error) {
+        console.error("Хичээлүүдийг татахад алдаа гарлаа:", error)
+      }
+    }
+
+    fetchSubjects()
+  }, [])
 
   const handleChange = (e) => {
     const { name, value } = e.target
-    setFormData((prev) => ({ ...prev, [name]: value }))
+
+    if (name === "type") {
+
+      let newCorrectAnswer = formData.correctAnswer
+
+      if (value === "select") {
+        newCorrectAnswer = formData.options && formData.options.length > 0 ? formData.options[0].id : "A"
+      } else if (value === "multiselect") {
+        newCorrectAnswer = []
+      } else if (value === "fill") {
+        newCorrectAnswer = ""
+      }
+
+      setFormData((prev) => ({
+        ...prev,
+        [name]: value,
+        correctAnswer: newCorrectAnswer,
+      }))
+    } else {
+      setFormData((prev) => ({ ...prev, [name]: value }))
+    }
   }
 
   const handleOptionChange = (index, value) => {
@@ -38,7 +86,7 @@ export default function QuestionForm({ question = null }) {
   }
 
   const addOption = () => {
-    // Шинэ id үүсгэх (A,B,C,... дараалалтай)
+
     const newId = String.fromCharCode(65 + formData.options.length) // 65 нь "A" код
     setFormData((prev) => ({
       ...prev,
@@ -54,13 +102,13 @@ export default function QuestionForm({ question = null }) {
 
     const newOptions = formData.options.filter((_, i) => i !== index)
 
-    // Хэрэв зөв хариулт устгагдсан бол эхний сонголтыг зөв болгоно
+
     let newCorrectAnswer = formData.correctAnswer
     const removedId = formData.options[index].id
 
-    if (formData.type === "select" && formData.correctAnswer === removedId) {
+    if (formData.type === "Нэг сонголттой" && formData.correctAnswer === removedId) {
       newCorrectAnswer = newOptions[0].id
-    } else if (formData.type === "multiselect" && Array.isArray(formData.correctAnswer)) {
+    } else if (formData.type === "Олон сонголттой" && Array.isArray(formData.correctAnswer)) {
       newCorrectAnswer = formData.correctAnswer.filter((id) => id !== removedId)
     }
 
@@ -76,14 +124,13 @@ export default function QuestionForm({ question = null }) {
     setIsLoading(true)
     setError("")
 
-    // Валидаци шалгах
+
     if (!formData.text.trim()) {
-      setError("Даалгаврын текст хоосон байна")
+      setError("Асуулт хоосон байна")
       setIsLoading(false)
       return
     }
 
-    // Сонголтын төрөлд сонголтууд шалгах
     if (
       (formData.type === "select" || formData.type === "multiselect") &&
       formData.options.some((opt) => !opt.text.trim())
@@ -97,12 +144,26 @@ export default function QuestionForm({ question = null }) {
       const endpoint = question ? `/api/questions/${question.id}` : "/api/questions"
       const method = question ? "PUT" : "POST"
 
+
+      const apiData = {
+        text: formData.text,
+        type: formData.type,
+        points: Number(formData.points) || 1,
+        options: formData.options,
+        correctAnswer: formData.correctAnswer,
+        className: formData.className,
+        category: formData.category,
+        subject: formData.subject, 
+        difficulty: formData.difficulty,
+        isInBank: formData.isInBank !== false,
+      }
+
       const response = await fetch(endpoint, {
         method,
         headers: {
           "Content-Type": "application/json",
         },
-        body: JSON.stringify(formData),
+        body: JSON.stringify(apiData),
       })
 
       if (!response.ok) {
@@ -110,7 +171,6 @@ export default function QuestionForm({ question = null }) {
         throw new Error(data.error || "Даалгавар хадгалахад алдаа гарлаа")
       }
 
-      // Амжилттай хадгалсны дараа даалгаврын сан руу буцна
       router.push("/teacher/question-bank")
       router.refresh()
     } catch (err) {
@@ -127,7 +187,7 @@ export default function QuestionForm({ question = null }) {
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
         <div className="md:col-span-2">
           <label htmlFor="text" className="block text-sm font-medium text-gray-700 mb-1">
-            Даалгаврын текст
+            Асуулт
           </label>
           <textarea
             id="text"
@@ -154,25 +214,28 @@ export default function QuestionForm({ question = null }) {
           >
             <option value="select">Нэг сонголттой</option>
             <option value="multiselect">Олон сонголттой</option>
-            <option value="text">Текст</option>
-            <option value="number">Тоон</option>
+            <option value="fill">Нөхөх</option>
           </select>
         </div>
 
         <div>
-          <label htmlFor="points" className="block text-sm font-medium text-gray-700 mb-1">
-            Оноо
+          <label htmlFor="subject" className="block text-sm font-medium text-gray-700 mb-1">
+            Хичээл
           </label>
-          <input
-            type="number"
-            id="points"
-            name="points"
-            value={formData.points}
+          <select
+            id="subject"
+            name="subject"
+            value={formData.subject}
             onChange={handleChange}
-            min="1"
             className="w-full border border-gray-300 rounded-md px-3 py-2"
-            required
-          />
+          >
+            <option value="">Сонгоно уу</option>
+            {subjects.map((subject) => (
+              <option key={subject.id} value={subject.name}>
+                {subject.name}
+              </option>
+            ))}
+          </select>
         </div>
 
         <div>
@@ -191,6 +254,8 @@ export default function QuestionForm({ question = null }) {
             <option value="8">8-р анги</option>
             <option value="9">9-р анги</option>
             <option value="10">10-р анги</option>
+            <option value="11">11-р анги</option>
+            <option value="12">12-р анги</option>
           </select>
         </div>
 
@@ -205,7 +270,23 @@ export default function QuestionForm({ question = null }) {
             value={formData.category}
             onChange={handleChange}
             className="w-full border border-gray-300 rounded-md px-3 py-2"
-            placeholder="Жишээ: Тэгшитгэл, Функц, гэх мэт."
+            placeholder="Жишээ: Алгебр, Геометр, гэх мэт."
+          />
+        </div>
+
+        <div>
+          <label htmlFor="points" className="block text-sm font-medium text-gray-700 mb-1">
+            Оноо
+          </label>
+          <input
+            type="number"
+            id="points"
+            name="points"
+            min="1"
+            max="100"
+            value={formData.points}
+            onChange={handleChange}
+            className="w-full border border-gray-300 rounded-md px-3 py-2"
           />
         </div>
 
@@ -286,32 +367,16 @@ export default function QuestionForm({ question = null }) {
         </div>
       )}
 
-      {formData.type === "text" && (
+      {formData.type === "fill" && (
         <div>
-          <label htmlFor="textAnswer" className="block text-sm font-medium text-gray-700 mb-1">
-            Зөв хариулт (текст)
+          <label htmlFor="answer" className="block text-sm font-medium text-gray-700 mb-1">
+            Зөв хариулт (нөхөх)
           </label>
           <input
             type="text"
-            id="textAnswer"
+            id="answer"
             value={formData.correctAnswer || ""}
             onChange={(e) => setFormData((prev) => ({ ...prev, correctAnswer: e.target.value }))}
-            className="w-full border border-gray-300 rounded-md px-3 py-2"
-            required
-          />
-        </div>
-      )}
-
-      {formData.type === "number" && (
-        <div>
-          <label htmlFor="numberAnswer" className="block text-sm font-medium text-gray-700 mb-1">
-            Зөв хариулт (тоо)
-          </label>
-          <input
-            type="number"
-            id="numberAnswer"
-            value={formData.correctAnswer || ""}
-            onChange={(e) => setFormData((prev) => ({ ...prev, correctAnswer: Number.parseFloat(e.target.value) }))}
             className="w-full border border-gray-300 rounded-md px-3 py-2"
             required
           />
@@ -328,7 +393,7 @@ export default function QuestionForm({ question = null }) {
           className="mr-2"
         />
         <label htmlFor="isInBank" className="text-sm text-gray-700">
-          Даалгаварын санд оруулах
+          Асуултын санд оруулах
         </label>
       </div>
 

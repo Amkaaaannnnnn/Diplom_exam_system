@@ -1,282 +1,220 @@
 "use client"
 
-import { useState, useEffect } from "react"
 import Link from "next/link"
-import { Pencil, Trash2, Plus, ChevronLeft } from "lucide-react"
+import { useRouter, useSearchParams } from "next/navigation"
+import { useState } from "react"
+import { PlusCircle, Edit, Trash2, Filter } from "lucide-react"
 
-export default function QuestionBankClient() {
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState(null)
-  const [data, setData] = useState({
-    questions: [],
-    allClasses: [],
-    allCategories: [],
-    allDifficulties: [],
-    allTypes: [],
-  })
+// Question types
+const questionTypes = [
+  { id: "select", name: "Нэг сонголттой" },
+  { id: "multiselect", name: "Олон сонголттой" },
+  { id: "fill", name: "Нөхөх" },
+]
 
-  const [filters, setFilters] = useState({
-    className: "",
-    category: "",
-    difficulty: "",
-    type: "",
-  })
+// Format question type for display
+const getQuestionTypeName = (type) => {
+  const found = questionTypes.find((t) => t.id === type)
+  return found ? found.name : type
+}
 
-  const [filteredQuestions, setFilteredQuestions] = useState([])
+export default function QuestionBankClient({ questions, uniqueClasses, uniqueCategories, initialFilters }) {
+  const router = useRouter()
+  const searchParams = useSearchParams()
+  const [filters, setFilters] = useState(initialFilters || {})
 
-  // Даалгаврын сангийн өгөгдлийг татах
-  useEffect(() => {
-    const fetchData = async () => {
-      try {
-        setLoading(true)
-        const response = await fetch("/api/questions/bank")
+  const updateFilter = (name, value) => {
+    const newFilters = { ...filters, [name]: value }
+    setFilters(newFilters)
 
-        if (!response.ok) {
-          const errorData = await response.json()
-          throw new Error(errorData.error || "Даалгаврын сангийн өгөгдлийг татахад алдаа гарлаа")
-        }
-
-        const result = await response.json()
-        setData(result)
-        setFilteredQuestions(result.questions)
-      } catch (err) {
-        console.error("Даалгаврын сангийн өгөгдлийг татахад алдаа гарлаа:", err)
-        setError(err.message)
-      } finally {
-        setLoading(false)
-      }
+    // Update URL
+    const params = new URLSearchParams(searchParams)
+    if (value) {
+      params.set(name, value)
+    } else {
+      params.delete(name)
     }
-
-    fetchData()
-  }, [])
-
-  // Шүүлтүүрийг хэрэглэх
-  useEffect(() => {
-    if (data.questions.length > 0) {
-      const filtered = data.questions.filter((question) => {
-        // Анги шүүлтүүр
-        if (filters.className && question.className !== filters.className) {
-          return false
-        }
-
-        // Сэдэв шүүлтүүр
-        if (filters.category && question.category !== filters.category) {
-          return false
-        }
-
-        // Түвшин шүүлтүүр
-        if (filters.difficulty && question.difficulty !== filters.difficulty) {
-          return false
-        }
-
-        // Төрөл шүүлтүүр
-        if (filters.type && question.type !== filters.type) {
-          return false
-        }
-
-        return true
-      })
-
-      setFilteredQuestions(filtered)
-    }
-  }, [filters, data.questions])
-
-  // Шүүлтүүрийн өөрчлөлтийг хадгалах
-  const handleFilterChange = (e) => {
-    const { name, value } = e.target
-    setFilters((prev) => ({
-      ...prev,
-      [name]: value,
-    }))
-  }
-
-  if (loading) {
-    return (
-      <div className="p-6 flex justify-center items-center min-h-[300px]">
-        <div className="text-center">
-          <div className="inline-block h-8 w-8 animate-spin rounded-full border-4 border-solid border-blue-500 border-r-transparent align-[-0.125em] motion-reduce:animate-[spin_1.5s_linear_infinite]"></div>
-          <p className="mt-2">Ачааллаж байна...</p>
-        </div>
-      </div>
-    )
-  }
-
-  if (error) {
-    return (
-      <div className="p-6">
-        <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded relative mb-4" role="alert">
-          <strong className="font-bold">Алдаа: </strong>
-          <span className="block sm:inline">{error}</span>
-        </div>
-        <Link href="/teacher/exams" className="text-blue-500 hover:text-blue-700">
-          Шалгалтын сан руу буцах
-        </Link>
-      </div>
-    )
+    router.push(`/teacher/question-bank?${params.toString()}`)
   }
 
   return (
     <div className="p-6">
-      <div className="mb-4">
-        <Link href="/teacher/exams" className="flex items-center text-blue-500 hover:text-blue-700 mb-4">
-          <ChevronLeft size={16} className="mr-1" />
-          Шалгалтын сан руу буцах
+      <div className="flex justify-between items-center mb-6">
+        <h1 className="text-2xl font-bold">Асуултын сан</h1>
+        <Link
+          href="/teacher/question-bank/new"
+          className="flex items-center gap-2 bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700"
+        >
+          <PlusCircle size={18} />
+          <span>Асуулт нэмэх</span>
         </Link>
       </div>
 
-      <div className="flex justify-between items-center mb-6">
-        <h1 className="text-2xl font-bold">Даалгаврын сан</h1>
-        <div className="flex space-x-3">
-          <Link
-            href="/teacher/question-bank/new"
-            className="bg-blue-500 hover:bg-blue-600 text-white px-4 py-2 rounded-md flex items-center"
-          >
-            <Plus size={18} className="mr-1" />
-            Даалгавар нэмэх
-          </Link>
+      {/* Filters */}
+      <div className="bg-white p-4 rounded-lg shadow-sm mb-6">
+        <div className="flex items-center gap-2 mb-4">
+          <Filter size={18} className="text-gray-500" />
+          <h2 className="text-lg font-medium">Шүүлтүүр</h2>
+        </div>
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+          <div>
+            <label htmlFor="class-filter" className="block text-sm font-medium text-gray-700 mb-1">
+              Анги
+            </label>
+            <select
+              id="class-filter"
+              className="w-full border border-gray-300 rounded-md px-3 py-2"
+              value={filters.className || ""}
+              onChange={(e) => updateFilter("className", e.target.value)}
+            >
+              <option value="">Бүгд</option>
+              {uniqueClasses.map((c) => (
+                <option key={c} value={c}>
+                  {c}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <label htmlFor="subject-filter" className="block text-sm font-medium text-gray-700 mb-1">
+              Хичээл
+            </label>
+            <select
+              id="subject-filter"
+              className="w-full border border-gray-300 rounded-md px-3 py-2"
+              value={filters.subject || ""}
+              onChange={(e) => updateFilter("subject", e.target.value)}
+            >
+              <option value="">Бүгд</option>
+              <option value="Математик">Математик</option>
+              <option value="Физик">Физик</option>
+              <option value="Хими">Хими</option>
+              <option value="Биологи">Биологи</option>
+              <option value="Англи хэл">Англи хэл</option>
+            </select>
+          </div>
+          <div>
+            <label htmlFor="category-filter" className="block text-sm font-medium text-gray-700 mb-1">
+              Төрөл
+            </label>
+            <select
+              id="category-filter"
+              className="w-full border border-gray-300 rounded-md px-3 py-2"
+              value={filters.category || ""}
+              onChange={(e) => updateFilter("category", e.target.value)}
+            >
+              <option value="">Бүгд</option>
+              {uniqueCategories.map((c) => (
+                <option key={c} value={c}>
+                  {c}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <label htmlFor="type-filter" className="block text-sm font-medium text-gray-700 mb-1">
+              Асуултын төрөл
+            </label>
+            <select
+              id="type-filter"
+              className="w-full border border-gray-300 rounded-md px-3 py-2"
+              value={filters.type || ""}
+              onChange={(e) => updateFilter("type", e.target.value)}
+            >
+              <option value="">Бүгд</option>
+              {questionTypes.map((t) => (
+                <option key={t.id} value={t.id}>
+                  {t.name}
+                </option>
+              ))}
+            </select>
+          </div>
         </div>
       </div>
 
-      {/* Хайлтын хэсэг */}
-      <div className="mb-6 flex flex-wrap gap-4">
-        <div className="w-60">
-          <label htmlFor="classFilter" className="block text-sm font-medium text-gray-700 mb-1">
-            Анги
-          </label>
-          <select
-            id="classFilter"
-            name="className"
-            className="w-full border border-gray-300 rounded-md px-3 py-2"
-            value={filters.className}
-            onChange={handleFilterChange}
-          >
-            <option value="">Бүгд</option>
-            {data.allClasses.map((className) => (
-              <option key={className} value={className}>
-                {className}-р анги
-              </option>
-            ))}
-          </select>
-        </div>
-
-        <div className="w-60">
-          <label htmlFor="categoryFilter" className="block text-sm font-medium text-gray-700 mb-1">
-            Сэдэв
-          </label>
-          <select
-            id="categoryFilter"
-            name="category"
-            className="w-full border border-gray-300 rounded-md px-3 py-2"
-            value={filters.category}
-            onChange={handleFilterChange}
-          >
-            <option value="">Бүгд</option>
-            {data.allCategories.map(
-              (category) =>
-                category && (
-                  <option key={category} value={category}>
-                    {category}
-                  </option>
-                ),
-            )}
-          </select>
-        </div>
-
-        <div className="w-60">
-          <label htmlFor="difficultyFilter" className="block text-sm font-medium text-gray-700 mb-1">
-            Түвшин
-          </label>
-          <select
-            id="difficultyFilter"
-            name="difficulty"
-            className="w-full border border-gray-300 rounded-md px-3 py-2"
-            value={filters.difficulty}
-            onChange={handleFilterChange}
-          >
-            <option value="">Бүгд</option>
-            {data.allDifficulties.map((difficulty) => (
-              <option key={difficulty} value={difficulty}>
-                {difficulty}
-              </option>
-            ))}
-          </select>
-        </div>
-
-        <div className="w-60">
-          <label htmlFor="typeFilter" className="block text-sm font-medium text-gray-700 mb-1">
-            Төрөл
-          </label>
-          <select
-            id="typeFilter"
-            name="type"
-            className="w-full border border-gray-300 rounded-md px-3 py-2"
-            value={filters.type}
-            onChange={handleFilterChange}
-          >
-            <option value="">Бүгд</option>
-            {data.allTypes.map((type) => (
-              <option key={type.id} value={type.id}>
-                {type.name}
-              </option>
-            ))}
-          </select>
-        </div>
-      </div>
-
-      {/* Даалгаврын жагсаалт */}
-      <div className="bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden">
+      {/* Questions table */}
+      <div className="bg-white rounded-lg shadow-sm overflow-hidden">
         <div className="overflow-x-auto">
           <table className="min-w-full divide-y divide-gray-200">
             <thead className="bg-gray-50">
               <tr>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">#</th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Анги</th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                <th
+                  scope="col"
+                  className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider"
+                >
+                  №
+                </th>
+                <th
+                  scope="col"
+                  className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider"
+                >
                   Даалгавар
                 </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                <th
+                  scope="col"
+                  className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider"
+                >
                   Сэдэв
                 </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                <th
+                  scope="col"
+                  className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider"
+                >
                   Төрөл
                 </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Түвшин
+                <th
+                  scope="col"
+                  className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider"
+                >
+                  Анги
                 </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Оноо</th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                <th
+                  scope="col"
+                  className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider"
+                >
+                  Оноо
+                </th>
+                <th
+                  scope="col"
+                  className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider"
+                >
                   Үйлдэл
                 </th>
               </tr>
             </thead>
             <tbody className="bg-white divide-y divide-gray-200">
-              {filteredQuestions.length > 0 ? (
-                filteredQuestions.map((question, index) => (
-                  <tr key={question.id}>
+              {questions.length === 0 ? (
+                <tr>
+                  <td colSpan="7" className="px-6 py-4 text-center text-gray-500">
+                    Асуулт олдсонгүй
+                  </td>
+                </tr>
+              ) : (
+                questions.map((question, index) => (
+                  <tr key={question.id} className="hover:bg-gray-50">
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{index + 1}</td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{question.className || "-"}</td>
-                    <td className="px-6 py-4 text-sm text-gray-900">{question.text}</td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{question.category || "-"}</td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                      {question.type === "select"
-                        ? "Нэг сонголттой"
-                        : question.type === "multiselect"
-                          ? "Олон сонголттой"
-                          : question.type === "text"
-                            ? "Текст"
-                            : question.type === "number"
-                              ? "Тоон"
-                              : question.type}
+                    <td className="px-6 py-4">
+                      <div className="text-sm text-gray-900">{question.text}</div>
                     </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{question.difficulty || "-"}</td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{question.points}</td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                    <td className="px-6 py-4 whitespace-nowrap">
+                      <div className="text-sm text-gray-900">{question.category || "—"}</div>
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap">
+                      <div className="text-sm text-gray-900">{getQuestionTypeName(question.type)}</div>
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap">
+                      <div className="text-sm text-gray-900">{question.className || "—"}</div>
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap">
+                      <div className="text-sm text-gray-900">{question.points}</div>
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
                       <div className="flex space-x-2">
                         <Link
                           href={`/teacher/question-bank/edit/${question.id}`}
-                          className="text-blue-600 hover:text-blue-900"
+                          className="text-indigo-600 hover:text-indigo-900"
                         >
-                          <Pencil size={18} />
+                          <Edit size={18} />
                         </Link>
                         <Link
                           href={`/teacher/question-bank/delete/${question.id}`}
@@ -288,12 +226,6 @@ export default function QuestionBankClient() {
                     </td>
                   </tr>
                 ))
-              ) : (
-                <tr>
-                  <td colSpan={8} className="px-6 py-4 text-center text-sm text-gray-500">
-                    Даалгавар олдсонгүй
-                  </td>
-                </tr>
               )}
             </tbody>
           </table>

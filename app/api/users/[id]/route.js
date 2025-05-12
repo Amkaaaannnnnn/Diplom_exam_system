@@ -75,18 +75,18 @@ export async function PUT(req, { params }) {
       status,
     }
 
-    // Нууц үг өгөгдсөн бол шинэчлэх
+
     if (password) {
       updateData.password = await bcrypt.hash(password, 10)
     }
 
-    // Хэрэглэгчийг шинэчлэх
+
     const updatedUser = await prisma.user.update({
       where: { id },
       data: updateData,
     })
 
-    // Нууц үгийг хариултаас хасах
+
     const { password: _, ...userWithoutPassword } = updatedUser
 
     return NextResponse.json(userWithoutPassword)
@@ -101,18 +101,17 @@ export async function DELETE(req, { params }) {
   try {
     const { id } = params
 
-    // Одоогийн хэрэглэгч админ эсэхийг шалгах
+
     const currentUser = await getCurrentUser()
     if (!currentUser || currentUser.role !== "admin") {
       return NextResponse.json({ error: "Зөвшөөрөлгүй" }, { status: 401 })
     }
 
-    // Өөрийгөө устгахыг хориглох
+
     if (id === currentUser.id) {
       return NextResponse.json({ error: "Өөрийн бүртгэлийг устгах боломжгүй" }, { status: 400 })
     }
 
-    // Хэрэглэгчийг устгах
     await prisma.user.delete({
       where: { id },
     })

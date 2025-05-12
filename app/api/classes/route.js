@@ -2,10 +2,10 @@ import { NextResponse } from "next/server"
 import { prisma } from "@/lib/prisma"
 import { getCurrentUser } from "@/lib/auth"
 
-// Бүх ангиудыг авах
+
 export async function GET() {
   try {
-    // Одоогийн хэрэглэгч нэвтэрсэн эсэхийг шалгах
+
     const currentUser = await getCurrentUser()
     if (!currentUser) {
       return NextResponse.json({ error: "Зөвшөөрөлгүй" }, { status: 401 })
@@ -25,7 +25,7 @@ export async function GET() {
       },
     })
 
-    // Ангиудыг форматлах
+
     const formattedClasses = classes.map((cls) => ({
       id: cls.className,
       name: cls.className,

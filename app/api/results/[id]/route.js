@@ -1,54 +1,24 @@
 import { NextResponse } from "next/server"
-import { cookies } from "next/headers"
-import { prisma } from "@/lib/prisma"
-import jwt from "jsonwebtoken"
+import prisma from "@/lib/prisma"
+import { getUser } from "@/lib/auth"
 
-// Helper function to get current user from cookies
-async function getCurrentUser() {
+export async function GET(request, { params }) {
   try {
-    const cookieStore = await cookies()
-    const token = cookieStore.get("token")?.value
+    const user = await getUser()
 
-    if (!token) {
-      return null
-    }
-
-    const decoded = jwt.verify(token, process.env.JWT_SECRET || "default_secret_please_change")
-    const user = await prisma.user.findUnique({
-      where: { id: decoded.id },
-    })
-
-    return user
-  } catch (error) {
-    console.error("Error getting current user:", error)
-    return null
-  }
-}
-
-export async function GET(req, { params }) {
-  try {
-    const { id } = params
-
-    // Get the current user
-    const currentUser = await getCurrentUser()
-
-    if (!currentUser) {
+    if (!user) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
     }
 
-    // Find the result with the given ID
-    const result = await prisma.result.findUnique({
+    const { id } = params
+
+    const result = await prisma.examResult.findUnique({
       where: { id },
       include: {
         exam: {
           include: {
-            questions: true,
-            user: {
-              select: {
-                id: true,
-                name: true,
-              },
-            },
+            createdBy: true,
+            subject: true,
           },
         },
         user: {
@@ -56,33 +26,110 @@ export async function GET(req, { params }) {
             id: true,
             name: true,
             username: true,
-            email: true,
             className: true,
             register: true,
+          },
+        },
+        answers: {
+          include: {
+            question: true,
           },
         },
       },
     })
 
     if (!result) {
-      return NextResponse.json({ error: "Шалгалтын дүн олдсонгүй" }, { status: 404 })
+      return NextResponse.json({ error: "Result not found" }, { status: 404 })
     }
 
-    // Check if the user is authorized to view this result
-    // Students can only view their own results
-    // Teachers can view all results for exams they created
+    // Check permissions
+    if (user.role === "STUDENT") {
+      // Students can only view their own results
+      if (result.userId !== user.id) {
+        return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
+      }
+    } else if (user.role === "TEACHER") {
+      // Teachers can only view results for exams they created
+      if (result.exam.createdById !== user.id) {
+        return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
+      }
+    }
     // Admins can view all results
-    if (
-      (currentUser.role === "student" && result.userId !== currentUser.id) ||
-      (currentUser.role === "teacher" && result.exam.userId !== currentUser.id && currentUser.role !== "admin")
-    ) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 403 })
-    }
 
-    // Format the response
     return NextResponse.json(result)
   } catch (error) {
     console.error("Error fetching result:", error)
-    return NextResponse.json({ error: "Шалгалтын дүнг татахад алдаа гарлаа" }, { status: 500 })
+    return NextResponse.json({ error: "Failed to fetch result" }, { status: 500 })
+  }
+}
+
+export async function PATCH(request, { params }) {
+  try {
+    const user = await getUser()
+
+    if (!user || (user.role !== "TEACHER" && user.role !== "ADMIN")) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
+    }
+
+    const { id } = params
+    const data = await request.json()
+
+    // Get the result to check permissions
+    const result = await prisma.examResult.findUnique({
+      where: { id },
+      include: {
+        exam: {
+          include: {
+            createdBy: true,
+          },
+        },
+      },
+    })
+
+    if (!result) {
+      return NextResponse.json({ error: "Result not found" }, { status: 404 })
+    }
+
+    // Check if user is admin or the teacher who created the exam
+    if (user.role !== "ADMIN" && result.exam.createdBy.id !== user.id) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
+    }
+
+    // Update answers
+    if (data.answers && Array.isArray(data.answers)) {
+      // Update each answer
+      for (const answer of data.answers) {
+        await prisma.examAnswer.update({
+          where: { id: answer.id },
+          data: {
+            isCorrect: answer.isCorrect,
+            feedback: answer.feedback,
+          },
+        })
+      }
+
+      // Recalculate the score
+      const updatedAnswers = await prisma.examAnswer.findMany({
+        where: { examResultId: id },
+      })
+
+      const totalQuestions = updatedAnswers.length
+      const correctAnswers = updatedAnswers.filter((a) => a.isCorrect).length
+      const score = totalQuestions > 0 ? Math.round((correctAnswers / totalQuestions) * 100) : 0
+
+      // Update the result with the new score
+      await prisma.examResult.update({
+        where: { id },
+        data: {
+          correctAnswers,
+          score,
+        },
+      })
+    }
+
+    return NextResponse.json({ success: true })
+  } catch (error) {
+    console.error("Error updating result:", error)
+    return NextResponse.json({ error: "Failed to update result" }, { status: 500 })
   }
 }

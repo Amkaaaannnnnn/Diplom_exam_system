@@ -21,9 +21,9 @@ export default function LoginPage() {
     setIsLoading(true)
 
     try {
-      console.log("Submitting login form:", { username }) // Log the submission
+      console.log("Submitting login form:", { username }) 
 
-      // Use absolute URL to ensure we're hitting the API endpoint
+
       const response = await fetch("/api/login", {
         method: "POST",
         headers: {
@@ -33,19 +33,18 @@ export default function LoginPage() {
         body: JSON.stringify({ username, password, rememberMe }),
       })
 
-      console.log("Response status:", response.status) // Log the response status
+      console.log("Response status:", response.status) 
       console.log("Response headers:", response.headers.get("content-type"))
 
-      // Check if response is JSON
       const contentType = response.headers.get("content-type")
       if (!contentType || !contentType.includes("application/json")) {
         const text = await response.text()
-        console.error("Non-JSON response:", text.substring(0, 200) + "...") // Log only the first 200 chars
+        console.error("Non-JSON response:", text.substring(0, 200) + "...") 
         throw new Error("Server returned non-JSON response")
       }
 
       const data = await response.json()
-      console.log("Response data:", data) // Log the response data
+      console.log("Response data:", data) 
 
       if (!response.ok) {
         throw new Error(data.error || "Login failed")

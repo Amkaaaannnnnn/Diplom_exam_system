@@ -1,8 +1,8 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   experimental: {
-    // serverActions: true тэмдэглэгээг устгаж, хоосон объект тавих
-    serverActions: {},
+    // serverActions объект биш boolean байх ёстой
+    serverActions: true,
   },
   eslint: {
     ignoreDuringBuilds: true,

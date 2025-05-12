@@ -1,153 +1,178 @@
-import { getCurrentUser } from "@/lib/auth"
-import { prisma } from "@/lib/prisma"
-import { redirect } from "next/navigation"
-import { FileText, BarChart2, CheckCircle } from "lucide-react"
+"use client"
 
-export default async function StudentDashboard() {
-  const user = await getCurrentUser()
+import { useState, useEffect } from "react"
+import Link from "next/link"
+import { Card } from "@/components/ui/card"
+import { Progress } from "@/components/ui/progress"
+import { Badge } from "@/components/ui/badge"
 
-  if (!user) {
-    redirect("/login")
+export default function StudentDashboard() {
+  const [user, setUser] = useState(null)
+  const [exams, setExams] = useState([])
+  const [results, setResults] = useState([])
+  const [loading, setLoading] = useState(true)
+  const [stats, setStats] = useState({
+    totalExams: 0,
+    avgScore: 0,
+    highestScore: 0,
+    lowestScore: 0,
+  })
+
+  useEffect(() => {
+    const fetchData = async () => {
+      try {
+        // Хэрэглэгчийн мэдээлэл авах
+        const userRes = await fetch("/api/me")
+        const userData = await userRes.json()
+
+        // Шалгалтын мэдээлэл авах - subjectType талбарыг хасав
+        const examsRes = await fetch("/api/exams")
+        const examsData = await examsRes.json()
+
+        // Дүнгийн мэдээлэл авах
+        const resultsRes = await fetch("/api/results")
+        const resultsData = await resultsRes.json()
+
+        setUser(userData)
+        setExams(examsData)
+        setResults(resultsData)
+
+        // Статистик тооцоолох
+        if (resultsData.length > 0) {
+          const scores = resultsData.map((r) => r.score)
+          setStats({
+            totalExams: resultsData.length,
+            avgScore: scores.reduce((a, b) => a + b, 0) / scores.length,
+            highestScore: Math.max(...scores),
+            lowestScore: Math.min(...scores),
+          })
+        }
+
+        setLoading(false)
+      } catch (error) {
+        console.error("Error fetching data:", error)
+        setLoading(false)
+      }
+    }
+
+    fetchData()
+  }, [])
+
+  // Үсгэн дүн тооцоолох функц
+  const getGrade = (score) => {
+    if (score >= 90) return "A"
+    if (score >= 80) return "B"
+    if (score >= 70) return "C"
+    if (score >= 60) return "D"
+    return "F"
   }
 
-  // Fetch exams for this student
-  const exams = await prisma.exam.findMany({
-    take: 3,
-    orderBy: {
-      createdAt: "desc",
-    },
-  })
+  // Дүнгийн өнгө тодорхойлох
+  const getScoreColor = (score) => {
+    if (score >= 90) return "bg-green-500"
+    if (score >= 80) return "bg-blue-500"
+    if (score >= 70) return "bg-yellow-500"
+    if (score >= 60) return "bg-orange-500"
+    return "bg-red-500"
+  }
 
-  // Fetch results for this student
-  const results = await prisma.result.findMany({
-    where: {
-      userId: user.id,
-    },
-    include: {
-      exam: true,
-    },
-    take: 5,
-    orderBy: {
-      createdAt: "desc",
-    },
-  })
-
-  // Calculate statistics
-  const totalExams = results.length
-  const completedExams = results.filter((result) => result.score > 0).length
-  const averageScore = results.length > 0 ? results.reduce((acc, result) => acc + result.score, 0) / results.length : 0
-  const passRate = totalExams > 0 ? (completedExams / totalExams) * 100 : 0
+  if (loading) {
+    return <div className="p-8">Ачааллаж байна...</div>
+  }
 
   return (
     <div className="p-6">
       <h1 className="text-2xl font-bold mb-6">Дүнгийн тайлан</h1>
 
+      {/* Статистик хэсэг */}
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-8">
-        <div className="bg-white p-4 rounded-lg shadow-sm border border-gray-200">
-          <div className="flex items-center mb-2">
-            <div className="w-8 h-8 rounded-full bg-blue-100 flex items-center justify-center mr-3">
-              <FileText size={18} className="text-blue-600" />
-            </div>
-            <span className="text-gray-600 text-sm">Нийт шалгалт</span>
-          </div>
-          <div className="text-2xl font-bold">{totalExams}</div>
-        </div>
+        <Card className="p-4 flex flex-col items-center">
+          <div className="text-gray-500 mb-1">Нийт шалгалт</div>
+          <div className="text-3xl font-bold">{stats.totalExams}</div>
+        </Card>
 
-        <div className="bg-white p-4 rounded-lg shadow-sm border border-gray-200">
-          <div className="flex items-center mb-2">
-            <div className="w-8 h-8 rounded-full bg-green-100 flex items-center justify-center mr-3">
-              <BarChart2 size={18} className="text-green-600" />
-            </div>
-            <span className="text-gray-600 text-sm">Дундаж оноо</span>
-          </div>
-          <div className="text-2xl font-bold">{Math.round(averageScore)}%</div>
-        </div>
+        <Card className="p-4 flex flex-col items-center">
+          <div className="text-gray-500 mb-1">Дундаж оноо</div>
+          <div className="text-3xl font-bold">{Math.round(stats.avgScore)}%</div>
+        </Card>
 
-        <div className="bg-white p-4 rounded-lg shadow-sm border border-gray-200">
-          <div className="flex items-center mb-2">
-            <div className="w-8 h-8 rounded-full bg-yellow-100 flex items-center justify-center mr-3">
-              <CheckCircle size={18} className="text-yellow-600" />
-            </div>
-            <span className="text-gray-600 text-sm">Хамгийн өндөр</span>
-          </div>
-          <div className="text-2xl font-bold">{Math.round(averageScore)}%</div>
-        </div>
+        <Card className="p-4 flex flex-col items-center">
+          <div className="text-gray-500 mb-1">Хамгийн өндөр</div>
+          <div className="text-3xl font-bold">{Math.round(stats.highestScore)}%</div>
+        </Card>
 
-        <div className="bg-white p-4 rounded-lg shadow-sm border border-gray-200">
-          <div className="flex items-center mb-2">
-            <div className="w-8 h-8 rounded-full bg-red-100 flex items-center justify-center mr-3">
-              <BarChart2 size={18} className="text-red-600" />
-            </div>
-            <span className="text-gray-600 text-sm">Хамгийн бага</span>
-          </div>
-          <div className="text-2xl font-bold">{Math.round(averageScore)}%</div>
-        </div>
+        <Card className="p-4 flex flex-col items-center">
+          <div className="text-gray-500 mb-1">Хамгийн бага</div>
+          <div className="text-3xl font-bold">{Math.round(stats.lowestScore)}%</div>
+        </Card>
       </div>
 
-      <div className="flex mb-4 gap-4">
-        <div className="w-1/2">
-          <select className="border border-gray-300 rounded-md px-3 py-2 w-40">
-            <option>Бүгд</option>
-          </select>
-        </div>
-        <div className="w-1/2">
-          <select className="border border-gray-300 rounded-md px-3 py-2 w-40">
-            <option>Бүгд</option>
-          </select>
-        </div>
+      {/* Хайлтын хэсэг */}
+      <div className="flex flex-col md:flex-row gap-4 mb-6">
+        <select className="border rounded p-2">
+          <option value="">Бүгд</option>
+          {/* Хичээлүүдийг давталтаар харуулах */}
+          {[...new Set(exams.map((exam) => exam.subject))].map((subject) => (
+            <option key={subject} value={subject}>
+              {subject}
+            </option>
+          ))}
+        </select>
       </div>
 
-      <div className="bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden">
-        <table className="min-w-full divide-y divide-gray-200">
-          <thead className="bg-gray-50">
-            <tr>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Хичээл</th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                Шалгалтын нэр
-              </th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Төрөл</th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Огноо</th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Оноо</th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Хувь</th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                Үнэлгээ
-              </th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                Дэлгэрэнгүй
-              </th>
+      {/* Дүнгийн жагсаалт */}
+      <div className="overflow-x-auto">
+        <table className="w-full border-collapse">
+          <thead>
+            <tr className="bg-gray-100">
+              <th className="p-3 text-left">Хичээл</th>
+              <th className="p-3 text-left">Шалгалтын нэр</th>
+              <th className="p-3 text-left">Төрөл</th>
+              <th className="p-3 text-left">Огноо</th>
+              <th className="p-3 text-left">Оноо</th>
+              <th className="p-3 text-left">Хувь</th>
+              <th className="p-3 text-left">Үнэлгээ</th>
+              <th className="p-3 text-left">Дэлгэрэнгүй</th>
             </tr>
           </thead>
-          <tbody className="bg-white divide-y divide-gray-200">
-            {results.map((result) => (
-              <tr key={result.id}>
-                <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">Математик</td>
-                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">2-р улирлын шалгалт</td>
-                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">Алгебр</td>
-                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                  {new Date(result.createdAt).toISOString().split("T")[0]}
-                </td>
-                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{result.score}/15</td>
-                <td className="px-6 py-4 whitespace-nowrap">
-                  <div className="flex items-center">
-                    <div className="w-16 bg-gray-200 rounded-full h-2.5">
-                      <div
-                        className="bg-red-500 h-2.5 rounded-full"
-                        style={{ width: `${Math.min(100, result.score)}%` }}
-                      ></div>
+          <tbody>
+            {results.map((result) => {
+              const exam = exams.find((e) => e.id === result.examId) || {}
+              const scorePercent = Math.round(result.score)
+              const grade = getGrade(scorePercent)
+
+              return (
+                <tr key={result.id} className="border-b hover:bg-gray-50">
+                  <td className="p-3">{exam.subject || "Тодорхойгүй"}</td>
+                  <td className="p-3">{exam.title || "Тодорхойгүй"}</td>
+                  <td className="p-3">{exam.category || "Тодорхойгүй"}</td>
+                  <td className="p-3">
+                    {exam.examDate ? new Date(exam.examDate).toLocaleDateString() : "Тодорхойгүй"}
+                  </td>
+                  <td className="p-3">
+                    {result.earnedPoints || 0}/{exam.totalPoints || 0}
+                  </td>
+                  <td className="p-3">
+                    <div className="flex items-center gap-2">
+                      <Progress
+                        value={scorePercent}
+                        className="w-24 h-2"
+                        indicatorClassName={getScoreColor(scorePercent)}
+                      />
+                      <span>{scorePercent}%</span>
                     </div>
-                    <span className="ml-2 text-sm text-gray-500">{Math.round(result.score)}%</span>
-                  </div>
-                </td>
-                <td className="px-6 py-4 whitespace-nowrap">
-                  <span className="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-red-100 text-red-800">
-                    F
-                  </span>
-                </td>
-                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                  <button className="bg-blue-500 hover:bg-blue-600 text-white px-3 py-1 rounded text-sm">Харах</button>
-                </td>
-              </tr>
-            ))}
+                  </td>
+                  <td className="p-3">
+                    <Badge variant={scorePercent >= 60 ? "default" : "destructive"}>{grade}</Badge>
+                  </td>
+                  <td className="p-3">
+                    <Link href={`/student/results/${result.id}`} className="text-blue-500 hover:underline">
+                      <button className="bg-blue-500 text-white px-3 py-1 rounded hover:bg-blue-600">Харах</button>
+                    </Link>
+                  </td>
+                </tr>
+              )
+            })}
           </tbody>
         </table>
       </div>

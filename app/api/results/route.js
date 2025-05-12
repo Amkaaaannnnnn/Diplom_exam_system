@@ -34,86 +34,71 @@ export async function GET(req) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
     }
 
-    let results
+    // Get the URL parameters
+    const url = new URL(req.url)
+    const studentId = url.searchParams.get("studentId")
+    const examId = url.searchParams.get("examId")
+
+    // Build the query based on the user role and parameters
+    const whereClause = {}
 
     if (currentUser.role === "student") {
-      // For students, get only their results
-      results = await prisma.result.findMany({
-        where: {
-          userId: currentUser.id,
-        },
-        include: {
-          exam: {
-            select: {
-              id: true,
-              title: true,
-              subject: true,
-              duration: true,
-            },
-          },
-        },
-        orderBy: {
-          submittedAt: "desc",
-        },
-      })
+      // Students can only see their own results
+      whereClause.userId = currentUser.id
     } else if (currentUser.role === "teacher") {
-      // For teachers, get results for exams they created
-      results = await prisma.result.findMany({
-        where: {
-          exam: {
-            userId: currentUser.id,
-          },
-        },
-        include: {
-          exam: {
-            select: {
-              id: true,
-              title: true,
-              subject: true,
-              duration: true,
-            },
-          },
-          user: {
-            select: {
-              id: true,
-              name: true,
-              username: true,
-              className: true,
-            },
-          },
-        },
-        orderBy: {
-          submittedAt: "desc",
-        },
-      })
+      // Teachers can see results for exams they created
+      if (studentId) {
+        // If studentId is provided, get results for that student
+        whereClause.userId = studentId
+        whereClause.exam = {
+          userId: currentUser.id,
+        }
+      } else {
+        // Otherwise, get all results for exams created by this teacher
+        whereClause.exam = {
+          userId: currentUser.id,
+        }
+      }
     } else if (currentUser.role === "admin") {
-      // For admins, get all results
-      results = await prisma.result.findMany({
-        include: {
-          exam: {
-            select: {
-              id: true,
-              title: true,
-              subject: true,
-              duration: true,
-            },
-          },
-          user: {
-            select: {
-              id: true,
-              name: true,
-              username: true,
-              className: true,
-            },
-          },
-        },
-        orderBy: {
-          submittedAt: "desc",
-        },
-      })
-    } else {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 403 })
+      // Admins can see all results
+      if (studentId) {
+        whereClause.userId = studentId
+      }
     }
+
+    // If examId is provided, filter by exam
+    if (examId) {
+      whereClause.examId = examId
+    }
+
+    // Get the results
+    const results = await prisma.result.findMany({
+      where: whereClause,
+      include: {
+        exam: {
+          select: {
+            id: true,
+            title: true,
+            subject: true,
+            subjectType: true,
+            className: true,
+            totalPoints: true,
+            examDate: true,
+          },
+        },
+        user: {
+          select: {
+            id: true,
+            name: true,
+            username: true,
+            className: true,
+          },
+        },
+      },
+      orderBy: {
+        submittedAt: "desc",
+      },
+    })
 
     return NextResponse.json(results)
   } catch (error) {

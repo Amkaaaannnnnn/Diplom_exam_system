@@ -2,6 +2,15 @@ import { NextResponse } from "next/server"
 import { prisma } from "@/lib/prisma"
 import { getCurrentUser } from "@/lib/auth"
 
+// Add this function at the beginning of the file, right after the imports:
+function normalizeClassName(className) {
+  // Remove any non-numeric characters from class names
+  if (typeof className === "string") {
+    return className.replace(/[^0-9]/g, "")
+  }
+  return className
+}
+
 // Create a new exam
 export async function POST(req) {
   try {
@@ -48,7 +57,7 @@ export async function POST(req) {
           title,
           description,
           subject,
-          className,
+          className: normalizeClassName(className), // Normalize class name
           duration: duration ? Number.parseInt(duration) : 30,
           totalPoints: totalPoints ? Number.parseInt(totalPoints) : 100,
           examDate: examDate ? new Date(examDate) : null,
@@ -63,24 +72,32 @@ export async function POST(req) {
       if (questions && questions.length > 0) {
         for (const q of questions) {
           try {
-            await tx.question.create({
+            // Create the question first
+            const newQuestion = await tx.question.create({
               data: {
                 text: q.text,
                 type: q.type,
                 points: q.points || 1,
                 options: q.options || [],
                 correctAnswer: q.correctAnswer,
-                userId: currentUser.id, // Багшийн ID-г нэмж өгөх
-                // Prisma схемд тохирсон холбоос ашиглах
-                exams: {
-                  connect: [{ id: newExam.id }],
-                },
-                examId: newExam.id, // Шууд холбоос
+                className: normalizeClassName(q.className || className), // Normalize class name
+                category: q.category || "",
+                difficulty: q.difficulty || null,
+                userId: currentUser.id,
+                isInBank: true,
+              },
+            })
+
+            // Then create the relationship between exam and question using ExamQuestion
+            await tx.examQuestion.create({
+              data: {
+                examId: newExam.id,
+                questionId: newQuestion.id,
               },
             })
           } catch (error) {
-            console.error("Даалгавар үүсгэхэд алдаа гарлаа:", error)
-            throw new Error(`Даалгавар үүсгэхэд алдаа гарлаа: ${error.message}`)
+            console.error("Асуулт үүсгэхэд алдаа гарлаа:", error)
+            throw new Error(`Асуулт үүсгэхэд алдаа гарлаа: ${error.message}`)
           }
         }
         console.log(`Added ${questions.length} questions to exam`)
@@ -113,7 +130,11 @@ export async function POST(req) {
     const completeExam = await prisma.exam.findUnique({
       where: { id: exam.id },
       include: {
-        questions: true,
+        examQuestions: {
+          include: {
+            question: true,
+          },
+        },
         assignedTo: {
           include: {
             user: {
@@ -164,7 +185,11 @@ export async function GET(req) {
               role: true,
             },
           },
-          questions: true,
+          examQuestions: {
+            include: {
+              question: true,
+            },
+          },
           assignedTo: {
             include: {
               user: {
@@ -196,7 +221,11 @@ export async function GET(req) {
               role: true,
             },
           },
-          questions: true,
+          examQuestions: {
+            include: {
+              question: true,
+            },
+          },
           assignedTo: {
             include: {
               user: {
@@ -232,14 +261,18 @@ export async function GET(req) {
               role: true,
             },
           },
-          questions: {
-            select: {
-              id: true,
-              text: true,
-              type: true,
-              points: true,
-              options: true,
-              // Don't include correctAnswer for students
+          examQuestions: {
+            include: {
+              question: {
+                select: {
+                  id: true,
+                  text: true,
+                  type: true,
+                  points: true,
+                  options: true,
+                  // Don't include correctAnswer for students
+                },
+              },
             },
           },
         },

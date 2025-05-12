@@ -77,7 +77,7 @@ export default function UserForm({ user = null }) {
   // Нэвтрэх нэр автоматаар үүсгэх
   const generateUsername = () => {
     if (formData.role && formData.name) {
-      const prefix = formData.role === "admin" ? "ADM" : formData.role === "teacher" ? "TCH" : "STU"
+      const prefix = formData.role === "admin" ? "ADM" : formData.role === "teacher" ? "TCH" : "ST"
       // Сүүлийн хэрэглэгчийн дугаарыг авах
       fetch("/api/users/last-id?role=" + formData.role)
         .then((res) => res.json())

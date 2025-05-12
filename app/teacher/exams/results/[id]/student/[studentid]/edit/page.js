@@ -1,407 +1,360 @@
 "use client"
 
 import { useState, useEffect } from "react"
-import { useParams, useRouter } from "next/navigation"
+import { useRouter } from "next/navigation"
 import Link from "next/link"
-import { ArrowLeft, Save, Check, X } from "lucide-react"
 
-export default function EditStudentExamResult() {
-  const params = useParams()
+export default function EditStudentResultPage({ params }) {
   const router = useRouter()
   const { id, studentId } = params
 
   const [loading, setLoading] = useState(true)
-  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState(null)
   const [exam, setExam] = useState(null)
   const [student, setStudent] = useState(null)
   const [result, setResult] = useState(null)
   const [answers, setAnswers] = useState([])
-  const [feedback, setFeedback] = useState("")
-  const [error, setError] = useState(null)
+  const [saving, setSaving] = useState(false)
+  const [saveError, setSaveError] = useState(null)
+  const [saveSuccess, setSaveSuccess] = useState(false)
 
   useEffect(() => {
     async function fetchData() {
       try {
-        // Шалгалтын дүнг авах
-        const resultResponse = await fetch(`/api/results/${id}?studentId=${studentId}`)
-        if (!resultResponse.ok) {
-          throw new Error("Failed to fetch result")
-        }
-        const resultData = await resultResponse.json()
+        setLoading(true)
 
-        // Шалгалтын мэдээллийг авах
-        const examResponse = await fetch(`/api/exams/${resultData.examId}`)
+        // Fetch exam data
+        const examResponse = await fetch(`/api/exams/${id}`)
         if (!examResponse.ok) {
           throw new Error("Failed to fetch exam")
         }
         const examData = await examResponse.json()
+        setExam(examData)
 
-        // Сурагчийн мэдээллийг авах
-        const studentResponse = await fetch(`/api/users/${resultData.userId}`)
+        // Fetch student data
+        const studentResponse = await fetch(`/api/users/${studentId}`)
         if (!studentResponse.ok) {
           throw new Error("Failed to fetch student")
         }
         const studentData = await studentResponse.json()
-
-        setExam(examData)
         setStudent(studentData)
-        setResult(resultData)
-        setAnswers(resultData.answers || [])
-        setFeedback(resultData.feedback || "")
-      } catch (error) {
-        console.error("Error fetching data:", error)
-        setError("Өгөгдөл татахад алдаа гарлаа")
+
+        // Fetch result data
+        const resultResponse = await fetch(`/api/exams/${id}/results`)
+        if (!resultResponse.ok) {
+          if (resultResponse.status === 401) {
+            router.push("/login")
+            return
+          }
+          throw new Error("Failed to fetch results")
+        }
+        const resultsData = await resultResponse.json()
+
+        // Find the specific student's result
+        const studentResult = resultsData.find((r) => r.userId === studentId)
+        if (!studentResult) {
+          throw new Error("Student result not found")
+        }
+
+        setResult(studentResult)
+        setAnswers(
+          studentResult.answers.map((answer) => ({
+            ...answer,
+            isCorrect: answer.isCorrect,
+            feedback: answer.feedback || "",
+          })),
+        )
+      } catch (err) {
+        console.error("Error fetching data:", err)
+        setError(err.message)
       } finally {
         setLoading(false)
       }
     }
 
     fetchData()
-  }, [id, studentId])
+  }, [id, studentId, router])
 
-  const handleAnswerCorrectChange = (questionId, isCorrect) => {
-    setAnswers((prevAnswers) =>
-      prevAnswers.map((answer) => (answer.questionId === questionId ? { ...answer, isCorrect } : answer)),
-    )
+  const handleCorrectChange = (answerId, isCorrect) => {
+    setAnswers((prev) => prev.map((answer) => (answer.id === answerId ? { ...answer, isCorrect } : answer)))
   }
 
-  const handleAnswerFeedbackChange = (questionId, feedback) => {
-    setAnswers((prevAnswers) =>
-      prevAnswers.map((answer) => (answer.questionId === questionId ? { ...answer, feedback } : answer)),
-    )
+  const handleFeedbackChange = (answerId, feedback) => {
+    setAnswers((prev) => prev.map((answer) => (answer.id === answerId ? { ...answer, feedback } : answer)))
   }
 
-  const calculateScore = () => {
-    if (!exam || !answers.length) return 0
+  const handleSubmit = async (e) => {
+    e.preventDefault()
 
-    const totalPoints = exam.questions.reduce((sum, q) => sum + q.points, 0)
-    const earnedPoints = answers.reduce((sum, answer) => {
-      const question = exam.questions.find((q) => q.id === answer.questionId)
-      return sum + (answer.isCorrect ? question?.points || 0 : 0)
-    }, 0)
-
-    return Math.round((earnedPoints / totalPoints) * 100)
-  }
-
-  const handleSave = async () => {
     try {
       setSaving(true)
+      setSaveError(null)
+      setSaveSuccess(false)
 
-      // Оноог тооцоолох
-      const score = calculateScore()
+      // Prepare data for submission
+      const updatedAnswers = answers.map(({ id, isCorrect, feedback }) => ({
+        id,
+        isCorrect,
+        feedback,
+      }))
 
-      // Шалгалтын дүнг шинэчлэх
+      // Submit the updated answers
       const response = await fetch(`/api/results/${result.id}`, {
-        method: "PUT",
+        method: "PATCH",
         headers: {
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({
-          score,
-          answers,
-          feedback,
-        }),
+        body: JSON.stringify({ answers: updatedAnswers }),
       })
 
       if (!response.ok) {
-        throw new Error("Failed to update result")
+        const errorData = await response.json()
+        throw new Error(errorData.error || "Failed to update result")
       }
 
-      // Амжилттай шинэчилсний дараа дэлгэрэнгүй хуудас руу буцах
-      router.push(`/teacher/exams/results/${id}/student/${studentId}`)
-    } catch (error) {
-      console.error("Error saving result:", error)
-      setError("Дүнг хадгалахад алдаа гарлаа")
+      setSaveSuccess(true)
+
+      // Redirect after successful save
+      setTimeout(() => {
+        router.push(`/teacher/exams/results/${id}/student/${studentId}`)
+      }, 1500)
+    } catch (err) {
+      console.error("Error saving result:", err)
+      setSaveError(err.message)
     } finally {
       setSaving(false)
     }
   }
 
-  // Үнэлгээ тодорхойлох
-  const getGrade = (score) => {
-    if (score >= 90) return "A"
-    if (score >= 80) return "B"
-    if (score >= 70) return "C"
-    if (score >= 60) return "D"
-    return "F"
-  }
-
   if (loading) {
     return (
-      <div className="flex justify-center items-center h-screen">
-        <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-blue-500"></div>
+      <div className="p-4">
+        <div className="flex justify-center items-center h-64">
+          <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-blue-500"></div>
+        </div>
       </div>
     )
   }
 
   if (error) {
     return (
-      <div className="p-6">
-        <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded relative" role="alert">
-          <strong className="font-bold">Алдаа!</strong>
-          <span className="block sm:inline"> {error}</span>
-        </div>
+      <div className="p-4">
+        <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded">Алдаа гарлаа: {error}</div>
         <div className="mt-4">
-          <Link href={`/teacher/exams/results/${id}`} className="text-blue-600 hover:text-blue-800">
-            Шалгалтын дүн рүү буцах
+          <Link href={`/teacher/exams/results/${id}`} className="text-blue-500 hover:underline">
+            Бүх дүн рүү буцах
           </Link>
         </div>
       </div>
     )
   }
 
-  const currentScore = calculateScore()
+  if (!exam || !student || !result) {
+    return (
+      <div className="p-4">
+        <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded">Мэдээлэл олдсонгүй</div>
+        <div className="mt-4">
+          <Link href={`/teacher/exams/results/${id}`} className="text-blue-500 hover:underline">
+            Бүх дүн рүү буцах
+          </Link>
+        </div>
+      </div>
+    )
+  }
+
+  // Calculate score
+  const totalQuestions = answers.length
+  const correctAnswers = answers.filter((answer) => answer.isCorrect).length
+  const score = totalQuestions > 0 ? Math.round((correctAnswers / totalQuestions) * 100) : 0
 
   return (
-    <div className="p-6">
-      <div className="flex items-center gap-2 mb-6">
-        <Link href={`/teacher/exams/results/${id}/student/${studentId}`} className="p-2 rounded-full hover:bg-gray-100">
-          <ArrowLeft size={20} />
-        </Link>
-        <h1 className="text-2xl font-bold">Дүн засах: {exam.title}</h1>
-        <div className="text-gray-500 ml-2">
-          {student.name} | {student.className}
-        </div>
-        <div className="ml-auto">
-          <button
-            onClick={handleSave}
-            disabled={saving}
-            className="flex items-center gap-2 bg-green-600 text-white rounded-md px-4 py-2 hover:bg-green-700 disabled:opacity-50"
+    <div className="p-4">
+      <div className="flex justify-between items-center mb-6">
+        <div>
+          <Link
+            href={`/teacher/exams/results/${id}/student/${studentId}`}
+            className="text-blue-500 hover:underline flex items-center"
           >
-            <Save size={18} />
-            <span>{saving ? "Хадгалж байна..." : "Хадгалах"}</span>
-          </button>
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              className="h-5 w-5 mr-1"
+              fill="none"
+              viewBox="0 0 24 24"
+              stroke="currentColor"
+            >
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 19l-7-7m0 0l7-7m-7 7h18" />
+            </svg>
+            Дүн харах хуудас руу буцах
+          </Link>
+          <h1 className="text-2xl font-bold mt-2">{exam.title} - Дүн засах</h1>
+          <p className="text-gray-600">
+            {student.name} ({student.className})
+          </p>
         </div>
       </div>
 
-      {/* Score summary */}
+      {saveSuccess && (
+        <div className="bg-green-100 border border-green-400 text-green-700 px-4 py-3 rounded mb-4">
+          Амжилттай хадгаллаа! Дүн харах хуудас руу шилжүүлж байна...
+        </div>
+      )}
+
+      {saveError && (
+        <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded mb-4">
+          Алдаа гарлаа: {saveError}
+        </div>
+      )}
+
       <div className="bg-white rounded-lg shadow-md p-6 mb-6">
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+        <h2 className="text-xl font-semibold mb-4">Шалгалтын дүн</h2>
+        <div className="grid grid-cols-2 gap-4 mb-4">
           <div>
-            <h2 className="text-lg font-medium mb-4">Шалгалтын дүн</h2>
-            <div className="space-y-2">
-              <div className="flex">
-                <span className="w-32 text-gray-500">Оноо:</span>
-                <span className="font-medium">
-                  {Math.round((currentScore * exam.totalPoints) / 100)}/{exam.totalPoints}
-                </span>
-              </div>
-              <div className="flex">
-                <span className="w-32 text-gray-500">Хувь:</span>
-                <span className="font-medium">{currentScore}%</span>
-              </div>
-              <div className="flex">
-                <span className="w-32 text-gray-500">Үнэлгээ:</span>
-                <span
-                  className={`px-2 py-0.5 rounded-full text-xs font-medium ${
-                    getGrade(currentScore) === "A"
-                      ? "bg-green-100 text-green-800"
-                      : getGrade(currentScore) === "B"
-                        ? "bg-blue-100 text-blue-800"
-                        : getGrade(currentScore) === "C"
-                          ? "bg-yellow-100 text-yellow-800"
-                          : getGrade(currentScore) === "D"
-                            ? "bg-orange-100 text-orange-800"
-                            : "bg-red-100 text-red-800"
-                  }`}
-                >
-                  {getGrade(currentScore)}
-                </span>
-              </div>
-            </div>
+            <p className="text-gray-600">Оноо:</p>
+            <p className="font-medium">
+              {correctAnswers}/{totalQuestions}
+            </p>
           </div>
-
-          <div className="md:col-span-2">
-            <h2 className="text-lg font-medium mb-4">Ерөнхий тайлбар</h2>
-            <textarea
-              value={feedback}
-              onChange={(e) => setFeedback(e.target.value)}
-              className="w-full h-32 p-3 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-              placeholder="Шалгалтын талаар ерөнхий тайлбар бичих..."
-            ></textarea>
+          <div>
+            <p className="text-gray-600">Хувь:</p>
+            <p className="font-medium">{score}%</p>
+          </div>
+          <div>
+            <p className="text-gray-600">Үнэлгээ:</p>
+            <p className={`font-medium ${score >= 70 ? "text-green-600" : "text-red-600"}`}>
+              {score >= 90 ? "A" : score >= 80 ? "B" : score >= 70 ? "C" : score >= 60 ? "D" : "F"}
+            </p>
           </div>
         </div>
       </div>
 
-      {/* Answers */}
-      <h2 className="text-xl font-medium mb-4">Хариултууд</h2>
-      <div className="space-y-6">
-        {exam.questions.map((question, index) => {
-          const answer = answers.find((a) => a.questionId === question.id)
+      <form onSubmit={handleSubmit}>
+        <div className="bg-white rounded-lg shadow-md p-6">
+          <h2 className="text-xl font-semibold mb-4">Хариултууд засах</h2>
 
-          return (
-            <div key={question.id} className="bg-white rounded-lg shadow-md p-6">
-              <div className="flex justify-between items-start mb-4">
-                <div className="flex items-center">
-                  <span className="bg-gray-200 text-gray-800 rounded-full w-8 h-8 flex items-center justify-center mr-3">
-                    {index + 1}
-                  </span>
-                  <h3 className="text-lg font-medium">{question.text}</h3>
+          {answers.map((answer, index) => {
+            // Parse options if they exist and are in string format
+            let options = []
+            if (answer.question.type === "MULTIPLE_CHOICE" && answer.question.options) {
+              try {
+                if (typeof answer.question.options === "string") {
+                  options = JSON.parse(answer.question.options)
+                } else if (Array.isArray(answer.question.options)) {
+                  options = answer.question.options
+                }
+              } catch (e) {
+                console.error("Error parsing options:", e)
+              }
+            }
+
+            return (
+              <div key={answer.id} className="border-b last:border-b-0 py-4">
+                <div className="flex justify-between">
+                  <h3 className="font-medium">Асуулт {index + 1}</h3>
+                  <div>
+                    <label className="inline-flex items-center">
+                      <input
+                        type="checkbox"
+                        checked={answer.isCorrect}
+                        onChange={(e) => handleCorrectChange(answer.id, e.target.checked)}
+                        className="form-checkbox h-5 w-5 text-blue-600"
+                      />
+                      <span className="ml-2 text-gray-700">Зөв</span>
+                    </label>
+                  </div>
                 </div>
-                <div className="flex items-center">
-                  <span className="text-gray-500 mr-2">{question.points} оноо</span>
-                </div>
-              </div>
 
-              {question.type === "select" && (
-                <div className="space-y-2 mt-4">
-                  {question.options.map((option) => (
-                    <div
-                      key={option.id}
-                      className={`p-3 rounded-md border ${
-                        answer && answer.answer === option.id
-                          ? answer.isCorrect
-                            ? "border-green-500 bg-green-50"
-                            : "border-red-500 bg-red-50"
-                          : question.correctAnswer === option.id
-                            ? "border-green-500 bg-green-50"
-                            : "border-gray-200"
-                      }`}
-                    >
-                      <div className="flex items-center">
-                        <div
-                          className={`w-5 h-5 rounded-full border flex items-center justify-center mr-3 ${
-                            answer && answer.answer === option.id
-                              ? answer.isCorrect
-                                ? "border-green-500 bg-green-500 text-white"
-                                : "border-red-500 bg-red-500 text-white"
-                              : question.correctAnswer === option.id
-                                ? "border-green-500 bg-green-500 text-white"
-                                : "border-gray-300"
-                          }`}
-                        >
-                          {answer && answer.answer === option.id && <Check size={12} />}
-                          {!answer && question.correctAnswer === option.id && <Check size={12} />}
-                        </div>
-                        <span>{option.text}</span>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
+                <p className="my-2">{answer.question.text}</p>
 
-              {question.type === "multiselect" && (
-                <div className="space-y-2 mt-4">
-                  {question.options.map((option) => {
-                    const isSelected = answer && Array.isArray(answer.answer) && answer.answer.includes(option.id)
-                    const isCorrectOption =
-                      Array.isArray(question.correctAnswer) && question.correctAnswer.includes(option.id)
-
-                    return (
+                {answer.question.type === "MULTIPLE_CHOICE" && (
+                  <div className="ml-4 mt-2">
+                    {options.map((option, optIndex) => (
                       <div
-                        key={option.id}
-                        className={`p-3 rounded-md border ${
-                          isSelected
-                            ? isCorrectOption
-                              ? "border-green-500 bg-green-50"
-                              : "border-red-500 bg-red-50"
-                            : isCorrectOption
-                              ? "border-green-500 bg-green-50"
-                              : "border-gray-200"
-                        }`}
+                        key={optIndex}
+                        className={`
+                        p-2 my-1 rounded
+                        ${answer.answer === option ? "bg-blue-50" : ""}
+                        ${answer.question.correctAnswer === option ? "border-l-4 border-green-500" : ""}
+                      `}
                       >
-                        <div className="flex items-center">
-                          <div
-                            className={`w-5 h-5 rounded-md border flex items-center justify-center mr-3 ${
-                              isSelected
-                                ? isCorrectOption
-                                  ? "border-green-500 bg-green-500 text-white"
-                                  : "border-red-500 bg-red-500 text-white"
-                                : isCorrectOption
-                                  ? "border-green-500 bg-green-500 text-white"
-                                  : "border-gray-300"
-                            }`}
-                          >
-                            {(isSelected || isCorrectOption) && <Check size={12} />}
-                          </div>
-                          <span>{option.text}</span>
-                        </div>
+                        {option}
+                        {answer.answer === option && <span className="ml-2 text-blue-600">← Сурагчийн хариулт</span>}
+                        {answer.question.correctAnswer === option && (
+                          <span className="ml-2 text-green-600">← Зөв хариулт</span>
+                        )}
                       </div>
-                    )
-                  })}
-                </div>
-              )}
+                    ))}
+                  </div>
+                )}
 
-              {(question.type === "text" || question.type === "number") && (
-                <div className="mt-4">
-                  <div className="mb-2">
-                    <span className="text-sm text-gray-500">Сурагчийн хариулт:</span>
-                  </div>
-                  <div
-                    className={`p-3 rounded-md border ${
-                      answer
-                        ? answer.isCorrect
-                          ? "border-green-500 bg-green-50"
-                          : "border-red-500 bg-red-50"
-                        : "border-gray-200"
-                    }`}
-                  >
-                    {answer ? answer.answer : "Хариулаагүй"}
-                  </div>
-                  <div className="mt-2">
-                    <span className="text-sm text-gray-500">Зөв хариулт:</span>
-                    <div className="p-3 rounded-md border border-green-500 bg-green-50 mt-1">
-                      {question.correctAnswer}
+                {answer.question.type === "TRUE_FALSE" && (
+                  <div className="ml-4 mt-2">
+                    <div
+                      className={`p-2 my-1 rounded ${answer.answer === "true" ? "bg-blue-50" : ""} ${answer.question.correctAnswer === "true" ? "border-l-4 border-green-500" : ""}`}
+                    >
+                      Үнэн
+                      {answer.answer === "true" && <span className="ml-2 text-blue-600">← Сурагчийн хариулт</span>}
+                      {answer.question.correctAnswer === "true" && (
+                        <span className="ml-2 text-green-600">← Зөв хариулт</span>
+                      )}
+                    </div>
+                    <div
+                      className={`p-2 my-1 rounded ${answer.answer === "false" ? "bg-blue-50" : ""} ${answer.question.correctAnswer === "false" ? "border-l-4 border-green-500" : ""}`}
+                    >
+                      Худал
+                      {answer.answer === "false" && <span className="ml-2 text-blue-600">← Сурагчийн хариулт</span>}
+                      {answer.question.correctAnswer === "false" && (
+                        <span className="ml-2 text-green-600">← Зөв хариулт</span>
+                      )}
                     </div>
                   </div>
-                </div>
-              )}
+                )}
 
-              <div className="mt-4 border-t pt-4">
-                <div className="flex items-center mb-2">
-                  <span className="text-sm font-medium mr-4">Хариулт зөв эсэх:</span>
-                  <div className="flex gap-2">
-                    <button
-                      type="button"
-                      onClick={() => handleAnswerCorrectChange(question.id, true)}
-                      className={`px-3 py-1 rounded-md flex items-center gap-1 ${
-                        answer && answer.isCorrect
-                          ? "bg-green-500 text-white"
-                          : "bg-gray-100 text-gray-700 hover:bg-gray-200"
-                      }`}
-                    >
-                      <Check size={16} />
-                      <span>Зөв</span>
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => handleAnswerCorrectChange(question.id, false)}
-                      className={`px-3 py-1 rounded-md flex items-center gap-1 ${
-                        answer && answer.isCorrect === false
-                          ? "bg-red-500 text-white"
-                          : "bg-gray-100 text-gray-700 hover:bg-gray-200"
-                      }`}
-                    >
-                      <X size={16} />
-                      <span>Буруу</span>
-                    </button>
+                {answer.question.type === "SHORT_ANSWER" && (
+                  <div className="ml-4 mt-2">
+                    <div className="mb-2">
+                      <span className="font-medium">Зөв хариулт:</span>
+                      <div className="p-2 bg-green-50 rounded border-l-4 border-green-500">
+                        {answer.question.correctAnswer}
+                      </div>
+                    </div>
+                    <div>
+                      <span className="font-medium">Сурагчийн хариулт:</span>
+                      <div className="p-2 bg-blue-50 rounded">{answer.answer}</div>
+                    </div>
                   </div>
-                </div>
-                <div>
-                  <label className="text-sm font-medium">Тайлбар:</label>
+                )}
+
+                <div className="mt-3">
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Багшийн тайлбар:</label>
                   <textarea
-                    value={answer?.feedback || ""}
-                    onChange={(e) => handleAnswerFeedbackChange(question.id, e.target.value)}
-                    className="w-full h-20 p-3 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 mt-1"
-                    placeholder="Энэ хариултын талаар тайлбар бичих..."
+                    value={answer.feedback}
+                    onChange={(e) => handleFeedbackChange(answer.id, e.target.value)}
+                    className="w-full p-2 border rounded focus:ring-blue-500 focus:border-blue-500"
+                    rows="2"
+                    placeholder="Энд тайлбар бичнэ үү..."
                   ></textarea>
                 </div>
               </div>
-            </div>
-          )
-        })}
-      </div>
+            )
+          })}
 
-      <div className="mt-6 flex justify-end">
-        <button
-          onClick={handleSave}
-          disabled={saving}
-          className="flex items-center gap-2 bg-green-600 text-white rounded-md px-6 py-3 hover:bg-green-700 disabled:opacity-50"
-        >
-          <Save size={18} />
-          <span>{saving ? "Хадгалж байна..." : "Хадгалах"}</span>
-        </button>
-      </div>
+          <div className="mt-6 flex justify-end">
+            <Link
+              href={`/teacher/exams/results/${id}/student/${studentId}`}
+              className="bg-gray-300 hover:bg-gray-400 text-gray-800 py-2 px-4 rounded mr-2"
+            >
+              Цуцлах
+            </Link>
+            <button
+              type="submit"
+              disabled={saving}
+              className="bg-blue-500 hover:bg-blue-600 text-white py-2 px-4 rounded disabled:opacity-50"
+            >
+              {saving ? "Хадгалж байна..." : "Хадгалах"}
+            </button>
+          </div>
+        </div>
+      </form>
     </div>
   )
 }

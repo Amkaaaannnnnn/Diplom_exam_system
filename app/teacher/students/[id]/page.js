@@ -26,12 +26,11 @@ export default async function StudentDetail({ params }) {
     notFound()
   }
 
-  // Сурагчийн дүнгийн мэдээллийг татах
   const results = await prisma.result.findMany({
     where: {
       userId: student.id,
       exam: {
-        userId: user.id, // Зөвхөн энэ багшийн шалгалтын дүнг харуулах
+        userId: user.id, 
       },
     },
     include: {
@@ -42,16 +41,14 @@ export default async function StudentDetail({ params }) {
     },
   })
 
-  // Дундаж оноо тооцоолох
+
   const averageScore = results.length > 0 ? results.reduce((acc, result) => acc + result.score, 0) / results.length : 0
 
-  // Хамгийн өндөр оноо
   const highestScore = results.length > 0 ? Math.max(...results.map((result) => result.score)) : 0
 
-  // Хамгийн бага оноо
   const lowestScore = results.length > 0 ? Math.min(...results.map((result) => result.score)) : 0
 
-  // Үнэлгээ тодорхойлох
+
   const getGrade = (score) => {
     if (score >= 90) return "A"
     if (score >= 80) return "B"

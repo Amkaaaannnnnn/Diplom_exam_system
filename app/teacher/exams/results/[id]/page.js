@@ -1,74 +1,71 @@
-import { getCurrentUser } from "@/lib/auth"
-import { prisma } from "@/lib/prisma"
-import { redirect, notFound } from "next/navigation"
+"use client"
+
+import { useState, useEffect } from "react"
+import { useParams, useRouter } from "next/navigation"
 import Link from "next/link"
-import { ArrowLeft, Download, Search, SortAsc, Clock, Users } from "lucide-react"
+import { ArrowLeft, Download, Search, Filter } from "lucide-react"
 
-export default async function ExamResults({ params }) {
-  const user = await getCurrentUser()
-
-  if (!user) {
-    redirect("/login")
-  }
-
-  if (user.role !== "teacher" && user.role !== "admin") {
-    redirect("/")
-  }
-
+export default function ExamResults() {
+  const params = useParams()
+  const router = useRouter()
   const { id } = params
 
-  // Шалгалтын мэдээллийг авах
-  const exam = await prisma.exam.findUnique({
-    where: { id },
-    include: {
-      questions: true,
-    },
-  })
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState(null)
+  const [exam, setExam] = useState(null)
+  const [results, setResults] = useState([])
+  const [searchTerm, setSearchTerm] = useState("")
+  const [filterGrade, setFilterGrade] = useState("all")
 
-  if (!exam) {
-    notFound()
-  }
+  useEffect(() => {
+    async function fetchData() {
+      try {
+        setLoading(true)
+        setError(null)
 
-  // Багш зөвхөн өөрийн шалгалтын дүнг харах боломжтой
-  if (user.role === "teacher" && exam.userId !== user.id) {
-    redirect("/teacher/exams")
-  }
+        // Шалгалтын мэдээллийг авах
+        const examResponse = await fetch(`/api/exams/${id}`)
 
-  // Шалгалтын дүнгүүдийг авах
-  const results = await prisma.result.findMany({
-    where: {
-      examId: id,
-    },
-    include: {
-      user: {
-        select: {
-          id: true,
-          name: true,
-          username: true,
-          className: true,
-        },
-      },
-    },
-    orderBy: {
-      submittedAt: "desc",
-    },
-  })
+        if (!examResponse.ok) {
+          if (examResponse.status === 401) {
+            router.push("/login")
+            return
+          }
 
-  // Статистик тооцоолох
-  const totalStudents = results.length
-  const averageScore =
-    totalStudents > 0 ? Math.round(results.reduce((acc, result) => acc + result.score, 0) / totalStudents) : 0
-  const passRate =
-    totalStudents > 0 ? Math.round((results.filter((result) => result.score >= 60).length / totalStudents) * 100) : 0
+          const examError = await examResponse.json()
+          throw new Error(examError.error || `Шалгалтын мэдээлэл татахад алдаа гарлаа: ${examResponse.status}`)
+        }
 
-  // Оноо хуваарилалт
-  const scoreDistribution = {
-    "90-100": results.filter((r) => r.score >= 90).length,
-    "80-89": results.filter((r) => r.score >= 80 && r.score < 90).length,
-    "70-79": results.filter((r) => r.score >= 70 && r.score < 80).length,
-    "60-69": results.filter((r) => r.score >= 60 && r.score < 70).length,
-    "0-59": results.filter((r) => r.score < 60).length,
-  }
+        const examData = await examResponse.json()
+
+        // Шалгалтын дүнг авах
+        const resultsResponse = await fetch(`/api/exams/${id}/results`)
+
+        if (!resultsResponse.ok) {
+          // If unauthorized, redirect to login
+          if (resultsResponse.status === 401) {
+            router.push("/login")
+            return
+          }
+
+          const resultsError = await resultsResponse.json()
+          throw new Error(resultsError.error || `Шалгалтын дүн татахад алдаа гарлаа: ${resultsResponse.status}`)
+        }
+
+        const resultsData = await resultsResponse.json()
+
+        setExam(examData)
+        setResults(resultsData)
+      } catch (error) {
+        console.error("Error fetching data:", error)
+        setError(error.message)
+      } finally {
+        setLoading(false)
+      }
+    }
+
+    fetchData()
+  }, [id, router])
 
   // Үнэлгээ тодорхойлох
   const getGrade = (score) => {
@@ -79,10 +76,132 @@ export default async function ExamResults({ params }) {
     return "F"
   }
 
+  // Хайлт, шүүлтийн үр дүнг авах
+  const filteredResults = results.filter((result) => {
+    const matchesSearch =
+      result.user.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      result.user.username.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      (result.user.className && result.user.className.toLowerCase().includes(searchTerm.toLowerCase()))
+
+    const grade = getGrade(result.score)
+    const matchesGrade = filterGrade === "all" || grade === filterGrade
+
+    return matchesSearch && matchesGrade
+  })
+
+  // Дундаж оноог тооцоолох
+  const calculateAverageScore = () => {
+    if (!results.length) return 0
+    const sum = results.reduce((acc, result) => acc + result.score, 0)
+    return Math.round(sum / results.length)
+  }
+
+  // Тэнцсэн хувийг тооцоолох
+  const calculatePassRate = () => {
+    if (!results.length) return 0
+    const passCount = results.filter((result) => result.score >= 60).length
+    return Math.round((passCount / results.length) * 100)
+  }
+
+  // CSV файл татах
+  const downloadCSV = () => {
+    if (!results.length) return
+
+    const headers = [
+      "№",
+      "Нэр",
+      "Хэрэглэгчийн нэр",
+      "Анги",
+      "Оноо",
+      "Хувь",
+      "Үнэлгээ",
+      "Эхэлсэн",
+      "Дууссан",
+      "Зарцуулсан",
+    ]
+
+    const rows = filteredResults.map((result, index) => {
+      const startTime = result.startedAt ? new Date(result.startedAt) : null
+      const endTime = result.submittedAt ? new Date(result.submittedAt) : null
+
+      let duration = "Тодорхойгүй"
+      if (startTime && endTime) {
+        const durationMs = endTime - startTime
+        const minutes = Math.floor(durationMs / 60000)
+        const seconds = Math.floor((durationMs % 60000) / 1000)
+        duration = `${minutes}:${seconds.toString().padStart(2, "0")}`
+      }
+
+      return [
+        index + 1,
+        result.user.name,
+        result.user.username,
+        result.user.className || "",
+        Math.round((result.score * (exam.totalPoints || 100)) / 100),
+        result.score + "%",
+        getGrade(result.score),
+        startTime ? startTime.toLocaleString() : "Тодорхойгүй",
+        endTime ? endTime.toLocaleString() : "Тодорхойгүй",
+        duration,
+      ]
+    })
+
+    const csvContent = [headers.join(","), ...rows.map((row) => row.join(","))].join("\n")
+
+    const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" })
+    const url = URL.createObjectURL(blob)
+    const link = document.createElement("a")
+    link.setAttribute("href", url)
+    link.setAttribute("download", `${exam?.title || "exam"}_results.csv`)
+    document.body.appendChild(link)
+    link.click()
+    document.body.removeChild(link)
+  }
+
+  if (loading) {
+    return (
+      <div className="flex justify-center items-center h-screen">
+        <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-blue-500"></div>
+      </div>
+    )
+  }
+
+  if (error) {
+    return (
+      <div className="p-6">
+        <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded relative" role="alert">
+          <strong className="font-bold">Алдаа!</strong>
+          <span className="block sm:inline"> {error}</span>
+        </div>
+        <div className="mt-4">
+          <Link href="/teacher/exams" className="text-blue-600 hover:text-blue-800">
+            Шалгалтууд руу буцах
+          </Link>
+        </div>
+      </div>
+    )
+  }
+
+  if (!exam) {
+    return (
+      <div className="p-6">
+        <div className="bg-yellow-100 border border-yellow-400 text-yellow-700 px-4 py-3 rounded relative" role="alert">
+          <strong className="font-bold">Анхааруулга!</strong>
+          <span className="block sm:inline"> Шалгалтын мэдээлэл олдсонгүй.</span>
+        </div>
+        <div className="mt-4">
+          <Link href="/teacher/exams" className="text-blue-600 hover:text-blue-800">
+            Шалгалтууд руу буцах
+          </Link>
+        </div>
+      </div>
+    )
+  }
+
   return (
     <div className="p-6">
       <div className="flex items-center gap-2 mb-6">
-        <Link href="/teacher/results" className="p-2 rounded-full hover:bg-gray-100">
+        <Link href="/teacher/exams" className="p-2 rounded-full hover:bg-gray-100">
           <ArrowLeft size={20} />
         </Link>
         <h1 className="text-2xl font-bold">{exam.title}</h1>
@@ -90,256 +209,232 @@ export default async function ExamResults({ params }) {
           {exam.subject} | {exam.className} | {new Date(exam.examDate).toLocaleDateString()}
         </div>
         <div className="ml-auto">
-          <button className="flex items-center gap-2 bg-blue-600 text-white rounded-md px-4 py-2 hover:bg-blue-700">
+          <button
+            onClick={downloadCSV}
+            className="flex items-center gap-2 bg-blue-600 text-white rounded-md px-4 py-2 hover:bg-blue-700"
+            disabled={!results.length}
+          >
             <Download size={18} />
             <span>Тайлан татах</span>
           </button>
         </div>
       </div>
 
-      {/* Key statistics */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
-        <div className="bg-white rounded-lg shadow-md p-4">
-          <div className="text-gray-500 text-sm mb-1">Нийт сурагч</div>
-          <div className="text-2xl font-bold">{totalStudents}</div>
-          <div className="flex items-center mt-2">
-            <Users className="text-blue-500" size={18} />
-          </div>
+      {/* Statistics */}
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-6">
+        <div className="bg-white rounded-lg shadow-md p-6">
+          <h2 className="text-sm text-gray-500 mb-1">Нийт сурагч</h2>
+          <div className="text-3xl font-bold">{results.length}</div>
         </div>
-
-        <div className="bg-white rounded-lg shadow-md p-4">
-          <div className="text-gray-500 text-sm mb-1">Дундаж оноо</div>
-          <div className="text-2xl font-bold">{averageScore}%</div>
-          <div className="w-full bg-gray-200 rounded-full h-2 mt-2">
-            <div
-              className={`h-2 rounded-full ${
-                averageScore >= 80 ? "bg-green-500" : averageScore >= 60 ? "bg-yellow-500" : "bg-red-500"
-              }`}
-              style={{ width: `${averageScore}%` }}
-            ></div>
-          </div>
+        <div className="bg-white rounded-lg shadow-md p-6">
+          <h2 className="text-sm text-gray-500 mb-1">Дундаж оноо</h2>
+          <div className="text-3xl font-bold">{calculateAverageScore()}%</div>
         </div>
-
-        <div className="bg-white rounded-lg shadow-md p-4">
-          <div className="text-gray-500 text-sm mb-1">Тэнцсэн хувь</div>
-          <div className="text-2xl font-bold">{passRate}%</div>
-          <div className="flex items-center mt-2">
-            <div className="w-full bg-gray-200 rounded-full h-2">
-              <div className="bg-green-500 h-2 rounded-full" style={{ width: `${passRate}%` }}></div>
-            </div>
-          </div>
+        <div className="bg-white rounded-lg shadow-md p-6">
+          <h2 className="text-sm text-gray-500 mb-1">Тэнцсэн хувь</h2>
+          <div className="text-3xl font-bold">{calculatePassRate()}%</div>
         </div>
-
-        <div className="bg-white rounded-lg shadow-md p-4">
-          <div className="text-gray-500 text-sm mb-1">Хугацаа</div>
-          <div className="text-2xl font-bold">{exam.duration} мин</div>
-          <div className="flex items-center mt-2">
-            <Clock className="text-purple-500" size={18} />
-          </div>
+        <div className="bg-white rounded-lg shadow-md p-6">
+          <h2 className="text-sm text-gray-500 mb-1">Хугацаа</h2>
+          <div className="text-3xl font-bold">{exam.duration} мин</div>
         </div>
       </div>
 
       {/* Score distribution */}
-      <div className="bg-white rounded-lg shadow-md p-4 mb-6">
-        <h3 className="text-lg font-medium mb-4">Оноо хуваарилалт</h3>
-        <div className="space-y-3">
-          {Object.entries(scoreDistribution).map(([range, count]) => (
-            <div key={range} className="flex items-center">
-              <div className="w-20 text-sm">{range}</div>
-              <div className="flex-1 mx-2">
-                <div className="bg-gray-200 h-5 rounded-full overflow-hidden">
-                  <div
-                    className={`h-full rounded-full ${
-                      range === "90-100"
-                        ? "bg-green-500"
-                        : range === "80-89"
-                          ? "bg-blue-500"
-                          : range === "70-79"
-                            ? "bg-yellow-500"
-                            : range === "60-69"
-                              ? "bg-orange-500"
-                              : "bg-red-500"
-                    }`}
-                    style={{ width: `${totalStudents > 0 ? (count / totalStudents) * 100 : 0}%` }}
-                  ></div>
+      <div className="bg-white rounded-lg shadow-md p-6 mb-6">
+        <h2 className="text-lg font-medium mb-4">Оноо хуваарилалт</h2>
+        <div className="space-y-2">
+          {[
+            { range: "90-100", color: "bg-green-500" },
+            { range: "80-89", color: "bg-blue-500" },
+            { range: "70-79", color: "bg-yellow-500" },
+            { range: "60-69", color: "bg-orange-500" },
+            { range: "0-59", color: "bg-red-500" },
+          ].map((item) => {
+            let count = 0
+            const [min, max] = item.range.split("-").map(Number)
+
+            count = results.filter((result) => result.score >= min && result.score <= max).length
+
+            const percentage = results.length ? Math.round((count / results.length) * 100) : 0
+
+            return (
+              <div key={item.range} className="flex items-center">
+                <div className="w-20 text-sm">{item.range}</div>
+                <div className="flex-1 mx-2">
+                  <div className="h-6 bg-gray-200 rounded-full overflow-hidden">
+                    <div className={`h-full ${item.color}`} style={{ width: `${percentage}%` }}></div>
+                  </div>
                 </div>
+                <div className="w-8 text-right">{count}</div>
               </div>
-              <div className="w-10 text-right text-sm">{count}</div>
-            </div>
-          ))}
+            )
+          })}
         </div>
       </div>
 
-      {/* Filters and search */}
-      <div className="flex flex-col md:flex-row gap-4 mb-6 justify-between">
-        <div className="flex items-center gap-2">
-          <div className="relative">
-            <input
-              type="text"
-              placeholder="Хайх..."
-              className="border border-gray-300 rounded-md pl-10 pr-4 py-2 w-full focus:outline-none focus:ring-2 focus:ring-blue-500"
-            />
-            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" size={18} />
+      {/* Search and filter */}
+      <div className="flex flex-col md:flex-row gap-4 mb-6">
+        <div className="relative flex-1">
+          <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+            <Search size={18} className="text-gray-400" />
           </div>
-          <select className="border border-gray-300 rounded-md px-4 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500">
+          <input
+            type="text"
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+            placeholder="Хайх..."
+            className="pl-10 w-full p-2 border border-gray-300 rounded-md"
+          />
+        </div>
+        <div className="relative">
+          <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+            <Filter size={18} className="text-gray-400" />
+          </div>
+          <select
+            value={filterGrade}
+            onChange={(e) => setFilterGrade(e.target.value)}
+            className="pl-10 p-2 border border-gray-300 rounded-md bg-white"
+          >
             <option value="all">Бүгд</option>
-            <option value="passed">Тэнцсэн</option>
-            <option value="failed">Тэнцээгүй</option>
+            <option value="A">A (90-100%)</option>
+            <option value="B">B (80-89%)</option>
+            <option value="C">C (70-79%)</option>
+            <option value="D">D (60-69%)</option>
+            <option value="F">F (0-59%)</option>
           </select>
         </div>
       </div>
 
       {/* Results table */}
-      <div className="overflow-x-auto bg-white rounded-lg shadow">
-        <table className="min-w-full divide-y divide-gray-200">
-          <thead className="bg-gray-50">
-            <tr>
-              <th
-                scope="col"
-                className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider"
-              >
-                №
-              </th>
-              <th
-                scope="col"
-                className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer"
-              >
-                <div className="flex items-center gap-1">
-                  Сурагчийн нэр <SortAsc size={14} />
-                </div>
-              </th>
-              <th
-                scope="col"
-                className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer"
-              >
-                <div className="flex items-center gap-1">
-                  Оноо <SortAsc size={14} />
-                </div>
-              </th>
-              <th
-                scope="col"
-                className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer"
-              >
-                <div className="flex items-center gap-1">
-                  Хувь <SortAsc size={14} />
-                </div>
-              </th>
-              <th
-                scope="col"
-                className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer"
-              >
-                <div className="flex items-center gap-1">
-                  Үнэлгээ <SortAsc size={14} />
-                </div>
-              </th>
-              <th
-                scope="col"
-                className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider"
-              >
-                Төлөв
-              </th>
-              <th
-                scope="col"
-                className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer"
-              >
-                <div className="flex items-center gap-1">
-                  Зарцуулсан хугацаа <SortAsc size={14} />
-                </div>
-              </th>
-              <th
-                scope="col"
-                className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider"
-              >
-                Дэлгэрэнгүй
-              </th>
-            </tr>
-          </thead>
-          <tbody className="bg-white divide-y divide-gray-200">
-            {results.length === 0 ? (
+      <div className="bg-white rounded-lg shadow-md overflow-hidden">
+        <div className="overflow-x-auto">
+          <table className="min-w-full divide-y divide-gray-200">
+            <thead className="bg-gray-50">
               <tr>
-                <td colSpan="8" className="px-6 py-4 text-center text-gray-500">
-                  Дүн олдсонгүй
-                </td>
+                <th
+                  scope="col"
+                  className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider"
+                >
+                  №
+                </th>
+                <th
+                  scope="col"
+                  className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider"
+                >
+                  Сурагчийн нэр
+                </th>
+                <th
+                  scope="col"
+                  className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider"
+                >
+                  Анги
+                </th>
+                <th
+                  scope="col"
+                  className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider"
+                >
+                  Оноо
+                </th>
+                <th
+                  scope="col"
+                  className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider"
+                >
+                  Хувь
+                </th>
+                <th
+                  scope="col"
+                  className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider"
+                >
+                  Үнэлгээ
+                </th>
+                <th
+                  scope="col"
+                  className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider"
+                >
+                  Зарцуулсан
+                </th>
+                <th
+                  scope="col"
+                  className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider"
+                >
+                  Үйлдэл
+                </th>
               </tr>
-            ) : (
-              results.map((result, index) => {
-                const grade = getGrade(result.score)
-                const duration = Math.floor((new Date(result.submittedAt) - new Date(result.startedAt)) / 60000)
+            </thead>
+            <tbody className="bg-white divide-y divide-gray-200">
+              {filteredResults.length > 0 ? (
+                filteredResults.map((result, index) => {
+                  const startTime = result.startedAt ? new Date(result.startedAt) : null
+                  const endTime = result.submittedAt ? new Date(result.submittedAt) : null
 
-                return (
-                  <tr key={result.id} className="hover:bg-gray-50">
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      <div className="text-sm text-gray-900">{index + 1}</div>
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      <div className="text-sm font-medium text-gray-900">{result.user.name}</div>
-                      <div className="text-xs text-gray-500">{result.user.className}</div>
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      <div className="text-sm font-medium text-gray-900">
-                        {Math.round((result.score * exam.totalPoints) / 100)}/{exam.totalPoints}
-                      </div>
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      <div
-                        className={`text-sm font-medium ${
-                          result.score >= 90
-                            ? "text-green-600"
-                            : result.score >= 80
-                              ? "text-blue-600"
-                              : result.score >= 70
-                                ? "text-yellow-600"
-                                : result.score >= 60
-                                  ? "text-orange-600"
-                                  : "text-red-600"
-                        }`}
-                      >
-                        {result.score}%
-                      </div>
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      <div
-                        className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
-                          grade === "A"
-                            ? "bg-green-100 text-green-800"
-                            : grade === "B"
-                              ? "bg-blue-100 text-blue-800"
-                              : grade === "C"
-                                ? "bg-yellow-100 text-yellow-800"
-                                : grade === "D"
-                                  ? "bg-orange-100 text-orange-800"
-                                  : "bg-red-100 text-red-800"
-                        }`}
-                      >
-                        {grade}
-                      </div>
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      <div className="text-sm text-green-600">Дууссан</div>
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      <div className="text-sm text-gray-900">{duration} мин</div>
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
-                      <Link
-                        href={`/teacher/exams/results/${id}/student/${result.userId}`}
-                        className="text-white bg-blue-600 hover:bg-blue-700 px-3 py-1 rounded-md mr-2"
-                      >
-                        Харах
-                      </Link>
-                      <Link
-                        href={`/teacher/exams/results/${id}/student/${result.userId}/edit`}
-                        className="text-white bg-green-600 hover:bg-green-700 px-3 py-1 rounded-md"
-                      >
-                        Засах
-                      </Link>
-                    </td>
-                  </tr>
-                )
-              })
-            )}
-          </tbody>
-        </table>
+                  let duration = "Тодорхойгүй"
+                  if (startTime && endTime) {
+                    const durationMs = endTime - startTime
+                    const minutes = Math.floor(durationMs / 60000)
+                    const seconds = Math.floor((durationMs % 60000) / 1000)
+                    duration = `${minutes} мин ${seconds} сек`
+                  }
+
+                  return (
+                    <tr key={result.id}>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{index + 1}</td>
+                      <td className="px-6 py-4 whitespace-nowrap">
+                        <div className="text-sm font-medium text-gray-900">{result.user.name}</div>
+                        <div className="text-sm text-gray-500">{result.user.username}</div>
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                        {result.user.className || "-"}
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                        {Math.round((result.score * (exam.totalPoints || 100)) / 100)}/{exam.totalPoints || 100}
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{result.score}%</td>
+                      <td className="px-6 py-4 whitespace-nowrap">
+                        <span
+                          className={`px-2 py-1 inline-flex text-xs leading-5 font-semibold rounded-full ${
+                            getGrade(result.score) === "A"
+                              ? "bg-green-100 text-green-800"
+                              : getGrade(result.score) === "B"
+                                ? "bg-blue-100 text-blue-800"
+                                : getGrade(result.score) === "C"
+                                  ? "bg-yellow-100 text-yellow-800"
+                                  : getGrade(result.score) === "D"
+                                    ? "bg-orange-100 text-orange-800"
+                                    : "bg-red-100 text-red-800"
+                          }`}
+                        >
+                          {getGrade(result.score)}
+                        </span>
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{duration}</td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
+                        <Link
+                          href={`/teacher/exams/results/${id}/student/${result.userId}`}
+                          className="text-blue-600 hover:text-blue-900 mr-4"
+                        >
+                          Харах
+                        </Link>
+                        <Link
+                          href={`/teacher/exams/results/${id}/student/${result.userId}/edit`}
+                          className="text-green-600 hover:text-green-900"
+                        >
+                          Засах
+                        </Link>
+                      </td>
+                    </tr>
+                  )
+                })
+              ) : (
+                <tr>
+                  <td colSpan="8" className="px-6 py-4 text-center text-sm text-gray-500">
+                    {results.length === 0 ? "Шалгалтын дүн байхгүй байна" : "Хайлтад тохирох дүн олдсонгүй"}
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
       </div>
     </div>
   )

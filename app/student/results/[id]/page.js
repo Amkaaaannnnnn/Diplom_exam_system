@@ -1,64 +1,85 @@
 "use client"
 
 import { useState, useEffect } from "react"
-import { useRouter } from "next/navigation"
-import { Check, X, Printer, ArrowLeft, Download, MessageCircle } from "lucide-react"
-import { Button } from "@/components/ui/button"
-import { Card, CardContent } from "@/components/ui/card"
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import { useParams, useRouter } from "next/navigation"
+import Link from "next/link"
+import { ArrowLeft, Printer, Check, X, Clock, Award, FileText, AlertTriangle } from "lucide-react"
 
-export default function ExamResultDetail({ params }) {
+export default function StudentExamResultPage() {
+  const params = useParams()
   const router = useRouter()
-  const { id } = params
   const [result, setResult] = useState(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
-  const [activeTab, setActiveTab] = useState("overview")
 
   useEffect(() => {
-    const fetchResult = async () => {
+    async function fetchResult() {
       try {
-        const response = await fetch(`/api/results/${id}`)
+        setLoading(true)
+        const response = await fetch(`/api/results/${params.id}`)
         if (!response.ok) {
-          throw new Error("Шалгалтын дүнг татахад алдаа гарлаа")
+          const errorData = await response.json()
+          throw new Error(errorData.error || "Шалгалтын дүнг ачаалахад алдаа гарлаа")
         }
         const data = await response.json()
         setResult(data)
+        setError(null)
       } catch (err) {
-        setError(err.message)
+        console.error("Error fetching result:", err)
+        setError(err.message || "Шалгалтын дүнг ачаалахад алдаа гарлаа")
       } finally {
         setLoading(false)
       }
     }
 
-    if (id) {
+    if (params.id) {
       fetchResult()
     }
-  }, [id])
+  }, [params.id])
 
-  const getScoreColor = (percentage) => {
-    if (percentage >= 90) return "text-green-600"
-    if (percentage >= 80) return "text-green-500"
-    if (percentage >= 70) return "text-yellow-600"
-    if (percentage >= 60) return "text-yellow-500"
-    return "text-red-500"
-  }
-
-  const getLetterGrade = (percentage) => {
-    if (percentage >= 90) return "A"
-    if (percentage >= 80) return "B"
-    if (percentage >= 70) return "C"
-    if (percentage >= 60) return "D"
+  // Үнэлгээ тодорхойлох
+  const getGrade = (score) => {
+    if (score >= 90) return "A"
+    if (score >= 80) return "B"
+    if (score >= 70) return "C"
+    if (score >= 60) return "D"
     return "F"
   }
 
-  const handlePrint = () => {
-    window.print()
+  // Үнэлгээний өнгө тодорхойлох
+  const getGradeColor = (score) => {
+    if (score >= 90) return "bg-green-100 text-green-800"
+    if (score >= 80) return "bg-blue-100 text-blue-800"
+    if (score >= 70) return "bg-yellow-100 text-yellow-800"
+    if (score >= 60) return "bg-orange-100 text-orange-800"
+    return "bg-red-100 text-red-800"
   }
 
-  const handleDownloadPDF = () => {
-    // PDF татах функц - хэрэгжүүлэх шаардлагатай
-    alert("PDF татах функц хэрэгжүүлэгдээгүй байна")
+  // Хугацааг тооцоолох
+  const calculateDuration = (startedAt, submittedAt) => {
+    if (!startedAt || !submittedAt) return "Тодорхойгүй"
+    const startTime = new Date(startedAt)
+    const endTime = new Date(submittedAt)
+    const durationMs = endTime - startTime
+
+    // Хугацааг минут, секундээр харуулах
+    const minutes = Math.floor(durationMs / 60000)
+    const seconds = Math.floor((durationMs % 60000) / 1000)
+
+    return `${minutes} мин ${seconds} сек`
+  }
+
+  // Шалгалт өгсөн өдөр, цагийг форматлах
+  const formatDateTime = (dateString) => {
+    if (!dateString) return "Тодорхойгүй"
+    const date = new Date(dateString)
+    return date.toLocaleString("mn-MN", {
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
+    })
   }
 
   if (loading) {
@@ -72,11 +93,18 @@ export default function ExamResultDetail({ params }) {
   if (error) {
     return (
       <div className="p-6">
-        <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded">{error}</div>
-        <div className="mt-4">
-          <Button variant="outline" onClick={() => router.push("/student/results")}>
-            <ArrowLeft className="mr-2 h-4 w-4" /> Буцах
-          </Button>
+        <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded relative" role="alert">
+          <div className="flex items-center">
+            <AlertTriangle className="h-5 w-5 mr-2" />
+            <strong className="font-bold">Алдаа!</strong>
+            <span className="block sm:inline ml-2">{error}</span>
+          </div>
+          <button
+            onClick={() => router.push("/student/results")}
+            className="mt-4 bg-red-200 text-red-700 px-4 py-2 rounded hover:bg-red-300"
+          >
+            Буцах
+          </button>
         </div>
       </div>
     )
@@ -85,475 +113,326 @@ export default function ExamResultDetail({ params }) {
   if (!result) {
     return (
       <div className="p-6">
-        <div className="bg-yellow-100 border border-yellow-400 text-yellow-700 px-4 py-3 rounded">
-          Шалгалтын дүн олдсонгүй.
-        </div>
-        <div className="mt-4">
-          <Button variant="outline" onClick={() => router.push("/student/results")}>
-            <ArrowLeft className="mr-2 h-4 w-4" /> Буцах
-          </Button>
+        <div className="bg-yellow-100 border border-yellow-400 text-yellow-700 px-4 py-3 rounded relative" role="alert">
+          <div className="flex items-center">
+            <AlertTriangle className="h-5 w-5 mr-2" />
+            <strong className="font-bold">Анхааруулга!</strong>
+            <span className="block sm:inline ml-2">Шалгалтын дүн олдсонгүй.</span>
+          </div>
+          <button
+            onClick={() => router.push("/student/results")}
+            className="mt-4 bg-yellow-200 text-yellow-700 px-4 py-2 rounded hover:bg-yellow-300"
+          >
+            Буцах
+          </button>
         </div>
       </div>
     )
   }
 
-  const isPassed = result.score >= 60
+  const exam = result.exam || {}
+  const user = result.user || {}
+  const answers = result.answers || []
 
   return (
     <div className="p-6">
-      <div className="max-w-4xl mx-auto">
-        {/* Хэвлэх үед харагдахгүй байх товчууд */}
-        <div className="print:hidden mb-6 flex flex-wrap justify-between items-center gap-2">
-          <Button variant="outline" onClick={() => router.push("/student/results")}>
-            <ArrowLeft className="mr-2 h-4 w-4" /> Буцах
-          </Button>
-          <div className="flex gap-2">
-            <Button variant="outline" onClick={handleDownloadPDF}>
-              <Download className="mr-2 h-4 w-4" /> PDF Татах
-            </Button>
-            <Button variant="outline" onClick={handlePrint}>
-              <Printer className="mr-2 h-4 w-4" /> Хэвлэх
-            </Button>
+      <div className="flex items-center gap-2 mb-6">
+        <Link href="/student/results" className="p-2 rounded-full hover:bg-gray-100">
+          <ArrowLeft size={20} />
+        </Link>
+        <h1 className="text-2xl font-bold">{exam.title || "Шалгалтын дүн"}</h1>
+        <div className="text-gray-500 ml-2">
+          {exam.subject} | {exam.className} | {new Date(exam.examDate || result.createdAt).toLocaleDateString()}
+        </div>
+        <div className="ml-auto">
+          <button
+            onClick={() => window.print()}
+            className="flex items-center gap-2 bg-blue-600 text-white rounded-md px-4 py-2 hover:bg-blue-700"
+          >
+            <Printer size={18} />
+            <span>Хэвлэх</span>
+          </button>
+        </div>
+      </div>
+
+      {/* Ерөнхий мэдээлэл */}
+      <div className="bg-white rounded-lg shadow-md p-6 mb-6">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          <div>
+            <h2 className="text-lg font-medium mb-4">Сурагчийн мэдээлэл</h2>
+            <div className="space-y-2">
+              <div className="flex">
+                <span className="w-32 text-gray-500">Нэр:</span>
+                <span className="font-medium">{user.name}</span>
+              </div>
+              <div className="flex">
+                <span className="w-32 text-gray-500">Нэвтрэх нэр:</span>
+                <span className="font-medium">{user.username}</span>
+              </div>
+              <div className="flex">
+                <span className="w-32 text-gray-500">Анги:</span>
+                <span className="font-medium">{user.className}</span>
+              </div>
+            </div>
+          </div>
+
+          <div>
+            <h2 className="text-lg font-medium mb-4">Шалгалтын дүн</h2>
+            <div className="space-y-2">
+              <div className="flex">
+                <span className="w-32 text-gray-500">Оноо:</span>
+                <span className="font-medium">
+                  {result.earnedPoints || Math.round((result.score * exam.totalPoints) / 100)}/{exam.totalPoints}
+                </span>
+              </div>
+              <div className="flex">
+                <span className="w-32 text-gray-500">Хувь:</span>
+                <span className="font-medium">{result.score}%</span>
+              </div>
+              <div className="flex items-center">
+                <span className="w-32 text-gray-500">Үнэлгээ:</span>
+                <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${getGradeColor(result.score)}`}>
+                  {getGrade(result.score)}
+                </span>
+              </div>
+              <div className="flex">
+                <span className="w-32 text-gray-500">Эхэлсэн:</span>
+                <span className="font-medium">{formatDateTime(result.startedAt)}</span>
+              </div>
+              <div className="flex">
+                <span className="w-32 text-gray-500">Дууссан:</span>
+                <span className="font-medium">{formatDateTime(result.submittedAt)}</span>
+              </div>
+              <div className="flex">
+                <span className="w-32 text-gray-500">Зарцуулсан:</span>
+                <span className="font-medium font-mono">{calculateDuration(result.startedAt, result.submittedAt)}</span>
+              </div>
+            </div>
           </div>
         </div>
+      </div>
 
-        {/* Шалгалтын дүнгийн хуудас */}
-        <Card className="mb-6 print:shadow-none print:border">
-          <CardContent className="p-0">
-            <div className="border-b p-6">
-              <h1 className="text-2xl font-bold">{result.exam.title}</h1>
-              <p className="text-gray-600">{result.exam.subject}</p>
+      {/* Шалгалтын статистик */}
+      <div className="bg-white rounded-lg shadow-md p-6 mb-6">
+        <h2 className="text-lg font-medium mb-4">Шалгалтын статистик</h2>
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <div className="bg-blue-50 p-4 rounded-lg border border-blue-100">
+            <div className="flex items-center mb-2">
+              <FileText className="text-blue-500 mr-2" size={20} />
+              <h3 className="font-medium">Асуултын тоо</h3>
             </div>
+            <p>{answers.length} асуулт</p>
+          </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 p-6 border-b">
-              <div>
-                <p className="text-gray-600 mb-1">Хэзээ: {new Date(result.submittedAt).toLocaleDateString()}</p>
-                <p className="text-gray-600 mb-1">Хугацаа: {result.exam.duration} минут</p>
-                <p className="text-gray-600">Багш: {result.exam.user?.name || "Тодорхойгүй"}</p>
-              </div>
-              <div>
-                <p className="text-gray-600 mb-1">Нэр: {result.user.name}</p>
-                <p className="text-gray-600 mb-1">Бүртгэлийн дугаар: {result.user.register || result.user.username}</p>
-                <p className="text-gray-600">Анги: {result.user.className || "Тодорхойгүй"}</p>
-              </div>
+          <div className="bg-green-50 p-4 rounded-lg border border-green-100">
+            <div className="flex items-center mb-2">
+              <Clock className="text-green-500 mr-2" size={20} />
+              <h3 className="font-medium">Хугацаа</h3>
             </div>
+            <p>{exam.duration || "Тодорхойгүй"} минут</p>
+          </div>
 
-            {/* Дүнгийн хэсэг */}
-            <div className="p-6 border-b">
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-center">
-                <div className="bg-white p-4 rounded-lg shadow-sm border">
-                  <p className="text-gray-500 text-sm">Оноо</p>
-                  <p className={`text-3xl font-bold ${getScoreColor(result.score)}`}>
-                    {result.earnedPoints}/{result.totalPoints}
-                  </p>
-                </div>
-                <div className="bg-white p-4 rounded-lg shadow-sm border">
-                  <p className="text-gray-500 text-sm">Хувь</p>
-                  <p className={`text-3xl font-bold ${getScoreColor(result.score)}`}>{result.score}%</p>
-                </div>
-                <div className="bg-white p-4 rounded-lg shadow-sm border">
-                  <p className="text-gray-500 text-sm">Үнэлгээ</p>
-                  <p className={`text-3xl font-bold ${getScoreColor(result.score)}`}>{getLetterGrade(result.score)}</p>
-                </div>
-              </div>
-
-              <div className="mt-4 text-center">
-                {isPassed ? (
-                  <div className="bg-green-100 text-green-800 py-2 px-4 rounded-full inline-block">
-                    <span className="font-semibold">Тэнцсэн</span>
-                  </div>
-                ) : (
-                  <div className="bg-red-100 text-red-800 py-2 px-4 rounded-full inline-block">
-                    <span className="font-semibold">Тэнцээгүй</span>
-                  </div>
-                )}
-              </div>
+          <div className="bg-purple-50 p-4 rounded-lg border border-purple-100">
+            <div className="flex items-center mb-2">
+              <Award className="text-purple-500 mr-2" size={20} />
+              <h3 className="font-medium">Зөв хариулсан</h3>
             </div>
+            <p>
+              {answers.filter((a) => a.isCorrect).length} / {answers.length} асуулт
+            </p>
+          </div>
+        </div>
+      </div>
 
-            {/* Багшийн тайлбар */}
-            {result.feedback && (
-              <div className="p-6 border-b">
-                <div className="flex items-start gap-2">
-                  <MessageCircle className="h-5 w-5 text-blue-500 mt-0.5" />
-                  <div>
-                    <h3 className="font-medium text-gray-900">Багшийн тайлбар:</h3>
-                    <p className="text-gray-700 mt-1">{result.feedback}</p>
-                  </div>
+      {/* Хариултууд */}
+      <h2 className="text-xl font-medium mb-4">Хариултууд</h2>
+      <div className="space-y-6">
+        {answers.map((answer, index) => {
+          const question = answer.question
+          if (!question) return null
+
+          const isCorrect = answer.isCorrect
+          const studentAnswer = answer.studentAnswer || ""
+          const correctAnswer = question.correctAnswer || ""
+
+          return (
+            <div key={index} className="bg-white rounded-lg shadow-md p-6">
+              <div className="flex justify-between items-start mb-4">
+                <div className="flex items-center">
+                  <span className="bg-gray-200 text-gray-800 rounded-full w-8 h-8 flex items-center justify-center mr-3">
+                    {index + 1}
+                  </span>
+                  <h3 className="text-lg font-medium">{question.text}</h3>
+                </div>
+                <div className="flex items-center">
+                  <span className="text-gray-500 mr-2">{question.points} оноо</span>
+                  {isCorrect !== undefined &&
+                    (isCorrect ? (
+                      <div className="bg-green-100 text-green-800 rounded-full p-1">
+                        <Check size={16} />
+                      </div>
+                    ) : (
+                      <div className="bg-red-100 text-red-800 rounded-full p-1">
+                        <X size={16} />
+                      </div>
+                    ))}
                 </div>
               </div>
-            )}
 
-            {/* Асуултуудын хэсэг */}
-            {result.answers && result.answers.length > 0 && (
-              <div className="p-6">
-                <Tabs defaultValue="all" className="print:hidden">
-                  <TabsList className="mb-4">
-                    <TabsTrigger value="all">Бүх асуултууд</TabsTrigger>
-                    <TabsTrigger value="correct">Зөв хариултууд</TabsTrigger>
-                    <TabsTrigger value="incorrect">Буруу хариултууд</TabsTrigger>
-                  </TabsList>
-
-                  <TabsContent value="all" className="space-y-6">
-                    {result.answers.map((answer, index) => {
-                      // Find the corresponding question
-                      const question = result.exam.questions.find((q) => q.id === answer.questionId)
-                      if (!question) return null
-
-                      return (
-                        <div key={index} className="border rounded-lg p-4">
-                          <div className="flex items-start mb-2">
-                            <div
-                              className={`flex-shrink-0 mt-1 mr-3 ${
-                                answer.isCorrect ? "text-green-500" : "text-red-500"
-                              }`}
-                            >
-                              {answer.isCorrect ? <Check size={20} /> : <X size={20} />}
-                            </div>
-                            <div>
-                              <p className="font-medium">
-                                {index + 1}. {question.text} ({question.points} оноо)
-                              </p>
-                            </div>
-                          </div>
-
-                          {/* Сонголтууд */}
-                          {question.type === "select" && question.options && (
-                            <div className="ml-8 mt-2">
-                              {JSON.parse(JSON.stringify(question.options)).map((option, optIndex) => (
-                                <div key={optIndex} className="flex items-center mb-1">
-                                  <div
-                                    className={`h-5 w-5 border rounded-full mr-2 flex items-center justify-center text-xs
-                                      ${
-                                        answer.studentAnswer === option.id
-                                          ? answer.isCorrect
-                                            ? "bg-green-100 border-green-500"
-                                            : "bg-red-100 border-red-500"
-                                          : question.correctAnswer === option.id
-                                            ? "bg-green-50 border-green-300"
-                                            : ""
-                                      }`}
-                                  >
-                                    {option.id}
-                                  </div>
-                                  <span
-                                    className={`
-                                    ${
-                                      answer.studentAnswer === option.id
-                                        ? answer.isCorrect
-                                          ? "text-green-700 font-medium"
-                                          : "text-red-700 font-medium"
-                                        : question.correctAnswer === option.id
-                                          ? "text-green-600"
-                                          : ""
-                                    }
-                                  `}
-                                  >
-                                    {option.text}
-                                  </span>
-                                </div>
-                              ))}
-                            </div>
-                          )}
-
-                          {/* Текст, тоо хариултууд */}
-                          {(question.type === "text" || question.type === "number") && (
-                            <div className="ml-8 mt-2">
-                              <div className="mb-1">
-                                <span className="text-gray-600">Таны хариулт: </span>
-                                <span
-                                  className={
-                                    answer.isCorrect ? "text-green-600 font-medium" : "text-red-600 font-medium"
-                                  }
-                                >
-                                  {answer.studentAnswer}
-                                </span>
-                              </div>
-                              {!answer.isCorrect && (
-                                <div className="mb-1">
-                                  <span className="text-gray-600">Зөв хариулт: </span>
-                                  <span className="text-green-600 font-medium">{question.correctAnswer}</span>
-                                </div>
-                              )}
-                            </div>
-                          )}
-
-                          {/* Асуултын тайлбар */}
-                          {answer.feedback && (
-                            <div className="ml-8 mt-2 p-2 bg-blue-50 border border-blue-100 rounded">
-                              <p className="text-sm text-blue-800">
-                                <span className="font-medium">Тайлбар: </span>
-                                {answer.feedback}
-                              </p>
-                            </div>
-                          )}
+              {/* Сонголтот асуулт */}
+              {question.type === "select" && question.options && (
+                <div className="space-y-2 mt-4">
+                  {question.options.map((option) => (
+                    <div
+                      key={option.id}
+                      className={`p-3 rounded-md border ${
+                        studentAnswer === option.id
+                          ? isCorrect
+                            ? "border-green-500 bg-green-50"
+                            : "border-red-500 bg-red-50"
+                          : correctAnswer === option.id
+                            ? "border-green-500 bg-green-50"
+                            : "border-gray-200"
+                      }`}
+                    >
+                      <div className="flex items-center">
+                        <div
+                          className={`w-5 h-5 rounded-full border flex items-center justify-center mr-3 ${
+                            studentAnswer === option.id
+                              ? isCorrect
+                                ? "border-green-500 bg-green-500 text-white"
+                                : "border-red-500 bg-red-500 text-white"
+                              : correctAnswer === option.id
+                                ? "border-green-500 bg-green-500 text-white"
+                                : "border-gray-300"
+                          }`}
+                        >
+                          {(studentAnswer === option.id || correctAnswer === option.id) && <Check size={12} />}
                         </div>
-                      )
-                    })}
-                  </TabsContent>
+                        <span>{option.text}</span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
 
-                  <TabsContent value="correct" className="space-y-6">
-                    {result.answers
-                      .filter((answer) => answer.isCorrect)
-                      .map((answer, index) => {
-                        const question = result.exam.questions.find((q) => q.id === answer.questionId)
-                        if (!question) return null
+              {/* Олон сонголтот асуулт */}
+              {question.type === "multiselect" && question.options && (
+                <div className="space-y-2 mt-4">
+                  {question.options.map((option) => {
+                    let studentAnswerArray = []
+                    try {
+                      studentAnswerArray =
+                        typeof studentAnswer === "string" && studentAnswer
+                          ? JSON.parse(studentAnswer)
+                          : Array.isArray(studentAnswer)
+                            ? studentAnswer
+                            : []
+                    } catch (e) {
+                      studentAnswerArray = [studentAnswer]
+                    }
 
-                        return (
-                          <div key={index} className="border rounded-lg p-4 border-green-200 bg-green-50">
-                            <div className="flex items-start mb-2">
-                              <div className="flex-shrink-0 mt-1 mr-3 text-green-500">
-                                <Check size={20} />
-                              </div>
-                              <div>
-                                <p className="font-medium">
-                                  {index + 1}. {question.text} ({question.points} оноо)
-                                </p>
-                              </div>
-                            </div>
+                    let correctAnswerArray = []
+                    try {
+                      correctAnswerArray =
+                        typeof correctAnswer === "string" && correctAnswer
+                          ? correctAnswer.startsWith("[")
+                            ? JSON.parse(correctAnswer)
+                            : [correctAnswer]
+                          : Array.isArray(correctAnswer)
+                            ? correctAnswer
+                            : []
+                    } catch (e) {
+                      correctAnswerArray = [correctAnswer]
+                    }
 
-                            {/* Сонголтууд */}
-                            {question.type === "select" && question.options && (
-                              <div className="ml-8 mt-2">
-                                {JSON.parse(JSON.stringify(question.options)).map((option, optIndex) => (
-                                  <div key={optIndex} className="flex items-center mb-1">
-                                    <div
-                                      className={`h-5 w-5 border rounded-full mr-2 flex items-center justify-center text-xs
-                                        ${
-                                          answer.studentAnswer === option.id
-                                            ? "bg-green-100 border-green-500"
-                                            : option.id === question.correctAnswer
-                                              ? "bg-green-50 border-green-300"
-                                              : ""
-                                        }`}
-                                    >
-                                      {option.id}
-                                    </div>
-                                    <span
-                                      className={`
-                                      ${
-                                        answer.studentAnswer === option.id
-                                          ? "text-green-700 font-medium"
-                                          : option.id === question.correctAnswer
-                                            ? "text-green-600"
-                                            : ""
-                                      }
-                                    `}
-                                    >
-                                      {option.text}
-                                    </span>
-                                  </div>
-                                ))}
-                              </div>
-                            )}
-
-                            {/* Текст, тоо хариултууд */}
-                            {(question.type === "text" || question.type === "number") && (
-                              <div className="ml-8 mt-2">
-                                <div className="mb-1">
-                                  <span className="text-gray-600">Таны хариулт: </span>
-                                  <span className="text-green-600 font-medium">{answer.studentAnswer}</span>
-                                </div>
-                              </div>
-                            )}
-
-                            {/* Асуултын тайлбар */}
-                            {answer.feedback && (
-                              <div className="ml-8 mt-2 p-2 bg-blue-50 border border-blue-100 rounded">
-                                <p className="text-sm text-blue-800">
-                                  <span className="font-medium">Тайлбар: </span>
-                                  {answer.feedback}
-                                </p>
-                              </div>
-                            )}
-                          </div>
-                        )
-                      })}
-                  </TabsContent>
-
-                  <TabsContent value="incorrect" className="space-y-6">
-                    {result.answers
-                      .filter((answer) => !answer.isCorrect)
-                      .map((answer, index) => {
-                        const question = result.exam.questions.find((q) => q.id === answer.questionId)
-                        if (!question) return null
-
-                        return (
-                          <div key={index} className="border rounded-lg p-4 border-red-200 bg-red-50">
-                            <div className="flex items-start mb-2">
-                              <div className="flex-shrink-0 mt-1 mr-3 text-red-500">
-                                <X size={20} />
-                              </div>
-                              <div>
-                                <p className="font-medium">
-                                  {index + 1}. {question.text} ({question.points} оноо)
-                                </p>
-                              </div>
-                            </div>
-
-                            {/* Сонголтууд */}
-                            {question.type === "select" && question.options && (
-                              <div className="ml-8 mt-2">
-                                {JSON.parse(JSON.stringify(question.options)).map((option, optIndex) => (
-                                  <div key={optIndex} className="flex items-center mb-1">
-                                    <div
-                                      className={`h-5 w-5 border rounded-full mr-2 flex items-center justify-center text-xs
-                                        ${
-                                          answer.studentAnswer === option.id
-                                            ? "bg-red-100 border-red-500"
-                                            : option.id === question.correctAnswer
-                                              ? "bg-green-100 border-green-500"
-                                              : ""
-                                        }`}
-                                    >
-                                      {option.id}
-                                    </div>
-                                    <span
-                                      className={`
-                                      ${
-                                        answer.studentAnswer === option.id
-                                          ? "text-red-700 font-medium"
-                                          : option.id === question.correctAnswer
-                                            ? "text-green-700 font-medium"
-                                            : ""
-                                      }
-                                    `}
-                                    >
-                                      {option.text}
-                                    </span>
-                                  </div>
-                                ))}
-                              </div>
-                            )}
-
-                            {/* Текст, тоо хариултууд */}
-                            {(question.type === "text" || question.type === "number") && (
-                              <div className="ml-8 mt-2">
-                                <div className="mb-1">
-                                  <span className="text-gray-600">Таны хариулт: </span>
-                                  <span className="text-red-600 font-medium">{answer.studentAnswer}</span>
-                                </div>
-                                <div className="mb-1">
-                                  <span className="text-gray-600">Зөв хариулт: </span>
-                                  <span className="text-green-600 font-medium">{question.correctAnswer}</span>
-                                </div>
-                              </div>
-                            )}
-
-                            {/* Асуултын тайлбар */}
-                            {answer.feedback && (
-                              <div className="ml-8 mt-2 p-2 bg-blue-50 border border-blue-100 rounded">
-                                <p className="text-sm text-blue-800">
-                                  <span className="font-medium">Тайлбар: </span>
-                                  {answer.feedback}
-                                </p>
-                              </div>
-                            )}
-                          </div>
-                        )
-                      })}
-                  </TabsContent>
-                </Tabs>
-
-                {/* Хэвлэх үед харагдах хэсэг */}
-                <div className="hidden print:block space-y-6">
-                  {result.answers.map((answer, index) => {
-                    // Find the corresponding question
-                    const question = result.exam.questions.find((q) => q.id === answer.questionId)
-                    if (!question) return null
+                    const isSelected = studentAnswerArray.includes(option.id)
+                    const isCorrectOption = correctAnswerArray.includes(option.id)
 
                     return (
-                      <div key={index} className="border rounded-lg p-4">
-                        <div className="flex items-start mb-2">
+                      <div
+                        key={option.id}
+                        className={`p-3 rounded-md border ${
+                          isSelected
+                            ? isCorrectOption
+                              ? "border-green-500 bg-green-50"
+                              : "border-red-500 bg-red-50"
+                            : isCorrectOption
+                              ? "border-green-500 bg-green-50"
+                              : "border-gray-200"
+                        }`}
+                      >
+                        <div className="flex items-center">
                           <div
-                            className={`flex-shrink-0 mt-1 mr-3 ${
-                              answer.isCorrect ? "text-green-500" : "text-red-500"
+                            className={`w-5 h-5 rounded-md border flex items-center justify-center mr-3 ${
+                              isSelected
+                                ? isCorrectOption
+                                  ? "border-green-500 bg-green-500 text-white"
+                                  : "border-red-500 bg-red-500 text-white"
+                                : isCorrectOption
+                                  ? "border-green-500 bg-green-500 text-white"
+                                  : "border-gray-300"
                             }`}
                           >
-                            {answer.isCorrect ? <Check size={20} /> : <X size={20} />}
+                            {(isSelected || isCorrectOption) && <Check size={12} />}
                           </div>
-                          <div>
-                            <p className="font-medium">
-                              {index + 1}. {question.text} ({question.points} оноо)
-                            </p>
-                          </div>
+                          <span>{option.text}</span>
                         </div>
-
-                        {/* Сонголтууд */}
-                        {question.type === "select" && question.options && (
-                          <div className="ml-8 mt-2">
-                            {JSON.parse(JSON.stringify(question.options)).map((option, optIndex) => (
-                              <div key={optIndex} className="flex items-center mb-1">
-                                <div
-                                  className={`h-5 w-5 border rounded-full mr-2 flex items-center justify-center text-xs
-                                    ${
-                                      answer.studentAnswer === option.id
-                                        ? answer.isCorrect
-                                          ? "bg-green-100 border-green-500"
-                                          : "bg-red-100 border-red-500"
-                                        : question.correctAnswer === option.id
-                                          ? "bg-green-50 border-green-300"
-                                          : ""
-                                    }`}
-                                >
-                                  {option.id}
-                                </div>
-                                <span
-                                  className={`
-                                  ${
-                                    answer.studentAnswer === option.id
-                                      ? answer.isCorrect
-                                        ? "text-green-700 font-medium"
-                                        : "text-red-700 font-medium"
-                                      : question.correctAnswer === option.id
-                                        ? "text-green-600"
-                                        : ""
-                                  }
-                                `}
-                                >
-                                  {option.text}
-                                </span>
-                              </div>
-                            ))}
-                          </div>
-                        )}
-
-                        {/* Текст, тоо хариултууд */}
-                        {(question.type === "text" || question.type === "number") && (
-                          <div className="ml-8 mt-2">
-                            <div className="mb-1">
-                              <span className="text-gray-600">Таны хариулт: </span>
-                              <span
-                                className={answer.isCorrect ? "text-green-600 font-medium" : "text-red-600 font-medium"}
-                              >
-                                {answer.studentAnswer}
-                              </span>
-                            </div>
-                            {!answer.isCorrect && (
-                              <div className="mb-1">
-                                <span className="text-gray-600">Зөв хариулт: </span>
-                                <span className="text-green-600 font-medium">{question.correctAnswer}</span>
-                              </div>
-                            )}
-                          </div>
-                        )}
-
-                        {/* Асуултын тайлбар */}
-                        {answer.feedback && (
-                          <div className="ml-8 mt-2 p-2 bg-blue-50 border border-blue-100 rounded">
-                            <p className="text-sm text-blue-800">
-                              <span className="font-medium">Тайлбар: </span>
-                              {answer.feedback}
-                            </p>
-                          </div>
-                        )}
                       </div>
                     )
                   })}
                 </div>
-              </div>
-            )}
-          </CardContent>
-        </Card>
+              )}
+
+              {/* Текст, тоо, нөхөх асуулт */}
+              {(question.type === "text" || question.type === "number" || question.type === "fill") && (
+                <div className="mt-4">
+                  <div className="mb-2">
+                    <span className="text-sm text-gray-500">Таны хариулт:</span>
+                  </div>
+                  <div
+                    className={`p-3 rounded-md border ${
+                      isCorrect ? "border-green-500 bg-green-50" : "border-red-500 bg-red-50"
+                    }`}
+                  >
+                    {studentAnswer || "Хариулаагүй"}
+                  </div>
+                  <div className="mt-2">
+                    <span className="text-sm text-gray-500">Зөв хариулт:</span>
+                    <div className="p-3 rounded-md border border-green-500 bg-green-50 mt-1">
+                      {correctAnswer || "Тодорхойгүй"}
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Тайлбар */}
+              {question.explanation && (
+                <div className="mt-4 p-3 bg-blue-50 border border-blue-200 rounded-md">
+                  <div className="text-sm font-medium text-blue-800 mb-1">Тайлбар:</div>
+                  <div className="text-blue-700">{question.explanation}</div>
+                </div>
+              )}
+            </div>
+          )
+        })}
+      </div>
+
+      {/* Багшийн тайлбар */}
+      {result.feedback && (
+        <div className="mt-6 bg-blue-50 border border-blue-200 rounded-md p-6">
+          <h2 className="text-lg font-medium text-blue-800 mb-2">Багшийн тайлбар:</h2>
+          <div className="text-blue-700">{result.feedback}</div>
+        </div>
+      )}
+
+      <div className="mt-6 flex justify-center">
+        <Link
+          href="/student/results"
+          className="bg-gray-100 hover:bg-gray-200 text-gray-800 font-medium py-2 px-4 rounded-md"
+        >
+          Бүх дүнгүүд рүү буцах
+        </Link>
       </div>
     </div>
   )

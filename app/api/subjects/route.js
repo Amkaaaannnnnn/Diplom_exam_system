@@ -24,10 +24,10 @@ export async function GET() {
   }
 }
 
-// Шинэ хичээл үүсгэх (зөвхөн админ)
+
 export async function POST(req) {
   try {
-    // Одоогийн хэрэглэгч админ эсэхийг шалгах
+
     const currentUser = await getCurrentUser()
     if (!currentUser || currentUser.role !== "admin") {
       return NextResponse.json({ error: "Зөвшөөрөлгүй" }, { status: 401 })
@@ -36,12 +36,12 @@ export async function POST(req) {
     const body = await req.json()
     const { name } = body
 
-    // Шаардлагатай талбаруудыг шалгах
+
     if (!name) {
       return NextResponse.json({ error: "Хичээлийн нэр оруулна уу" }, { status: 400 })
     }
 
-    // Хичээл давхардсан эсэхийг шалгах
+
     const existingSubject = await prisma.subject.findUnique({
       where: { name },
     })
@@ -50,7 +50,7 @@ export async function POST(req) {
       return NextResponse.json({ error: "Хичээл бүртгэгдсэн байна" }, { status: 400 })
     }
 
-    // Хичээл үүсгэх
+
     const subject = await prisma.subject.create({
       data: {
         name,

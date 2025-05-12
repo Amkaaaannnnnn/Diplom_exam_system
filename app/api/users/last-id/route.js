@@ -4,7 +4,7 @@ import { getCurrentUser } from "@/lib/auth"
 
 export async function GET(req) {
   try {
-    // Одоогийн хэрэглэгч админ эсэхийг шалгах
+
     const currentUser = await getCurrentUser()
     if (!currentUser || currentUser.role !== "admin") {
       return NextResponse.json({ error: "Зөвшөөрөлгүй" }, { status: 401 })
@@ -13,7 +13,7 @@ export async function GET(req) {
     const url = new URL(req.url)
     const role = url.searchParams.get("role") || "student"
 
-    // Тухайн эрхтэй хэрэглэгчдийг авах
+
     const users = await prisma.user.findMany({
       where: {
         role: role,
@@ -28,9 +28,9 @@ export async function GET(req) {
       return NextResponse.json({ lastId: 0 })
     }
 
-    // Нэвтрэх нэрээс тоог ялгаж авах
+
     const username = users[0].username
-    const prefix = role === "admin" ? "ADM" : role === "teacher" ? "TCH" : "STU"
+    const prefix = role === "admin" ? "ADM" : role === "teacher" ? "TCH" : "ST"
     const numericPart = username.replace(prefix, "")
     const lastId = Number.parseInt(numericPart, 10) || 0
 

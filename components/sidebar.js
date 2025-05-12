@@ -7,112 +7,123 @@ import { Home, FileText, BarChart2, Settings, LogOut, ChevronDown, ChevronRight 
 
 export default function Sidebar({ user }) {
   const pathname = usePathname()
-  // Add state to track if the exams dropdown is open
-  const [examsOpen, setExamsOpen] = useState(true) // Default to open
+  const [examsOpen, setExamsOpen] = useState(true)
 
   const isActive = (path) => {
     return pathname === path || pathname.startsWith(path + "/")
   }
 
+  // Гарах функц
   const handleLogout = async () => {
-    await fetch("/api/logout", {
-      method: "POST",
-    })
-    window.location.href = "/login"
-  }
+    try {
+      const response = await fetch("/api/logout", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+      })
 
-  // Toggle the exams dropdown
-  const toggleExamsDropdown = () => {
-    setExamsOpen(!examsOpen)
+      if (response.ok) {
+        window.location.href = "/login"
+      } else {
+        console.error("Системээс гарахад алдаа гарлаа")
+      }
+    } catch (error) {
+      console.error("Системээс гарахад алдаа гарлаа:", error)
+    }
   }
 
   return (
-    <div className="w-[210px] min-h-screen bg-white border-r border-gray-200 flex flex-col">
-      <div className="p-4">
-        <Link href="/student" className="flex items-center gap-2 text-blue-600 font-medium">
-          <Home size={20} />
-          <span>Хянах самбар</span>
-        </Link>
+    <div className="h-screen w-64 bg-white border-r border-gray-200 flex flex-col">
+      <div className="p-4 border-b border-gray-200">
+        <h1 className="text-xl font-bold">Шалгалтын систем</h1>
       </div>
 
-      <div className="mt-6">
-        <div className="px-4 mb-2">
-          <button
-            onClick={toggleExamsDropdown}
-            className={`flex items-center justify-between w-full gap-2 p-2 rounded-md ${
-              isActive("/student/exams") || isActive("/student/results")
-                ? "bg-blue-50 text-blue-600"
-                : "text-gray-700 hover:bg-gray-100"
-            }`}
-          >
-            <div className="flex items-center gap-2">
-              <FileText size={20} />
-              <span>Шалгалт</span>
-            </div>
-            {examsOpen ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
-          </button>
+      <nav className="flex-1 overflow-y-auto p-4">
+        <ul className="space-y-1">
+          <li>
+            <Link
+              href="/student"
+              className={`flex items-center gap-3 px-3 py-2 rounded-md ${
+                isActive("/student") &&
+                !isActive("/student/exams") &&
+                !isActive("/student/results") &&
+                !isActive("/student/settings")
+                  ? "bg-blue-100 text-blue-600"
+                  : "text-gray-700 hover:bg-gray-100"
+              }`}
+            >
+              <Home size={20} />
+              <span>Хянах самбар</span>
+            </Link>
+          </li>
 
-          {/* Only show sub-items when examsOpen is true */}
-          {examsOpen && (
-            <div className="ml-6 mt-1">
-              <Link
-                href="/student/exams"
-                className={`flex items-center p-2 text-sm ${
-                  pathname === "/student/exams" ? "text-blue-600" : "text-gray-600 hover:text-gray-900"
-                }`}
-              >
-                Бүх шалгалтууд
-              </Link>
-              <Link
-                href="/student/results"
-                className={`flex items-center p-2 text-sm ${
-                  pathname === "/student/results" || pathname.startsWith("/student/results/")
-                    ? "text-blue-600"
-                    : "text-gray-600 hover:text-gray-900"
-                }`}
-              >
-                Шалгалтын дүн
-              </Link>
-            </div>
-          )}
-        </div>
+          <li>
+            <button
+              onClick={() => setExamsOpen(!examsOpen)}
+              className={`flex items-center justify-between w-full px-3 py-2 rounded-md ${
+                isActive("/student/exams") ? "bg-blue-100 text-blue-600" : "text-gray-700 hover:bg-gray-100"
+              }`}
+            >
+              <div className="flex items-center gap-3">
+                <FileText size={20} />
+                <span>Шалгалтууд</span>
+              </div>
+              {examsOpen ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
+            </button>
 
-        <div className="px-4 mb-2">
-          <Link
-            href="/student/grades"
-            className={`flex items-center gap-2 p-2 rounded-md ${
-              isActive("/student/grades") ? "bg-blue-50 text-blue-600" : "text-gray-700 hover:bg-gray-100"
-            }`}
-          >
-            <BarChart2 size={20} />
-            <span>Дүн</span>
-          </Link>
-        </div>
+            {examsOpen && (
+              <ul className="ml-8 mt-1 space-y-1">
+                <li>
+                  <Link
+                    href="/student/exams"
+                    className={`flex items-center gap-3 px-3 py-2 rounded-md ${
+                      pathname === "/student/exams" ? "bg-blue-100 text-blue-600" : "text-gray-700 hover:bg-gray-100"
+                    }`}
+                  >
+                    <span>Бүх шалгалт</span>
+                  </Link>
+                </li>
 
-        <div className="px-4 mb-2">
-          <Link
-            href="/student/settings"
-            className={`flex items-center gap-2 p-2 rounded-md ${
-              isActive("/student/settings") ? "bg-blue-50 text-blue-600" : "text-gray-700 hover:bg-gray-100"
-            }`}
-          >
-            <Settings size={20} />
-            <span>Тохиргоо</span>
-          </Link>
-        </div>
-      </div>
+              </ul>
+            )}
+          </li>
 
-      <div className="mt-auto border-t border-gray-200 p-4">
-        <div className="mb-4">
-          <div className="text-sm font-medium">Нэвтэрсэн:</div>
-          <div className="text-sm font-medium">{user.name}</div>
-          <div className="text-xs text-gray-500">{user.username}</div>
+          <li>
+            <Link
+              href="/student/results"
+              className={`flex items-center gap-3 px-3 py-2 rounded-md ${
+                isActive("/student/results") ? "bg-blue-100 text-blue-600" : "text-gray-700 hover:bg-gray-100"
+              }`}
+            >
+              <BarChart2 size={20} />
+              <span>Шалгалтын дүнгүүд</span>
+            </Link>
+          </li>
+
+          <li>
+            <Link
+              href="/student/settings"
+              className={`flex items-center gap-3 px-3 py-2 rounded-md ${
+                isActive("/student/settings") ? "bg-blue-100 text-blue-600" : "text-gray-700 hover:bg-gray-100"
+              }`}
+            >
+              <Settings size={20} />
+              <span>Тохиргоо</span>
+            </Link>
+          </li>
+        </ul>
+      </nav>
+
+      <div className="p-4 border-t border-gray-200">
+        <div className="flex items-center justify-between">
+          <div>
+            <p className="font-medium">{user?.name || "Сурагч"}</p>
+            <p className="text-sm text-gray-500">{user?.username || ""}</p>
+          </div>
         </div>
-        <button
-          onClick={handleLogout}
-          className="flex items-center gap-2 text-red-600 hover:text-red-700 text-sm font-medium"
-        >
-          <LogOut size={16} />
+        <button onClick={handleLogout} className="flex items-center gap-2 mt-4 text-red-600 hover:text-red-800">
+          <LogOut size={18} />
           <span>Гарах</span>
         </button>
       </div>

@@ -1,33 +1,52 @@
-import { getCurrentUser } from "@/lib/auth"
-import { prisma } from "@/lib/prisma"
-import { redirect } from "next/navigation"
+"use client"
+
+import { useState, useEffect } from "react"
+import { useRouter } from "next/navigation"
 import Link from "next/link"
 import { Pencil, Trash2, Plus, ChevronLeft } from "lucide-react"
 
-export default async function QuestionBank() {
-  const user = await getCurrentUser()
-
-  if (!user) {
-    redirect("/login")
-  }
-
-  if (user.role !== "teacher") {
-    redirect("/login")
-  }
-
-  // Багшийн даалгаваруудыг татах
-  const questions = await prisma.question.findMany({
-    where: {
-      userId: user.id,
-      isInBank: true,
-    },
-    orderBy: {
-      createdAt: "desc",
-    },
+export default function QuestionBankPage() {
+  const router = useRouter()
+  const [questions, setQuestions] = useState([])
+  const [isLoading, setIsLoading] = useState(true)
+  const [filters, setFilters] = useState({
+    className: "",
+    category: "",
+    difficulty: "",
+    type: "",
   })
+  const [classNames, setClassNames] = useState([])
+  const [categories, setCategories] = useState([])
+  const [difficulties, setDifficulties] = useState([])
 
-  // Ангиар бүлэглэх (хоосон бүлгийг арилгана)
-  const categories = [...new Set(questions.map((q) => q.category).filter(Boolean))].sort()
+  useEffect(() => {
+    const fetchQuestions = async () => {
+      setIsLoading(true)
+      try {
+        const query = new URLSearchParams(filters).toString()
+        const res = await fetch(`/api/questions?${query}`)
+        const data = await res.json()
+        setQuestions(data)
+
+        const cls = [...new Set(data.map((q) => q.className).filter(Boolean))].sort()
+        const cat = [...new Set(data.map((q) => q.category).filter(Boolean))].sort()
+        const diff = [...new Set(data.map((q) => q.difficulty).filter(Boolean))].sort()
+        setClassNames(cls)
+        setCategories(cat)
+        setDifficulties(diff)
+      } catch (err) {
+        console.error("Асуулт татахад алдаа гарлаа:", err)
+      } finally {
+        setIsLoading(false)
+      }
+    }
+
+    fetchQuestions()
+  }, [filters])
+
+  const handleFilterChange = (key, value) => {
+    setFilters((prev) => ({ ...prev, [key]: value }))
+  }
 
   return (
     <div className="p-6">
@@ -39,133 +58,121 @@ export default async function QuestionBank() {
       </div>
 
       <div className="flex justify-between items-center mb-6">
-        <h1 className="text-2xl font-bold">Даалгаврын сан</h1>
-        <div className="flex space-x-3">
-          <Link
-            href="/teacher/question-bank/new"
-            className="bg-blue-500 hover:bg-blue-600 text-white px-4 py-2 rounded-md flex items-center"
-          >
-            <Plus size={18} className="mr-1" />
-            Даалгавар нэмэх
-          </Link>
-        </div>
+        <h1 className="text-2xl font-bold">Асуултын сан</h1>
+        <Link
+          href="/teacher/question-bank/new"
+          className="bg-blue-500 hover:bg-blue-600 text-white px-4 py-2 rounded-md flex items-center"
+        >
+          <Plus size={18} className="mr-1" />
+          Асуулт нэмэх
+        </Link>
       </div>
 
-      {/* Хайлтын хэсэг */}
       <div className="mb-6 flex flex-wrap gap-4">
         <div className="w-60">
-          <label htmlFor="classFilter" className="block text-sm font-medium text-gray-700 mb-1">
-            Анги
-          </label>
-          <select id="classFilter" className="w-full border border-gray-300 rounded-md px-3 py-2">
+          <label htmlFor="classFilter" className="block text-sm font-medium text-gray-700 mb-1">Анги</label>
+          <select
+            id="classFilter"
+            value={filters.className}
+            onChange={(e) => handleFilterChange("className", e.target.value)}
+            className="w-full border border-gray-300 rounded-md px-3 py-2"
+          >
             <option value="">Бүгд</option>
-            <option value="7">7-р анги</option>
-            <option value="8">8-р анги</option>
-            <option value="9">9-р анги</option>
-            <option value="10">10-р анги</option>
-          </select>
-        </div>
-
-        <div className="w-60">
-          <label htmlFor="categoryFilter" className="block text-sm font-medium text-gray-700 mb-1">
-            Сэдэв
-          </label>
-          <select id="categoryFilter" className="w-full border border-gray-300 rounded-md px-3 py-2">
-            <option value="">Бүгд</option>
-            {categories.map((category) => (
-              <option key={category} value={category}>
-                {category}
-              </option>
+            {classNames.map((className) => (
+              <option key={className} value={className}>{className}-р анги</option>
             ))}
           </select>
         </div>
 
         <div className="w-60">
-          <label htmlFor="difficultyFilter" className="block text-sm font-medium text-gray-700 mb-1">
-            Түвшин
-          </label>
-          <select id="difficultyFilter" className="w-full border border-gray-300 rounded-md px-3 py-2">
+          <label htmlFor="categoryFilter" className="block text-sm font-medium text-gray-700 mb-1">Сэдэв</label>
+          <select
+            id="categoryFilter"
+            value={filters.category}
+            onChange={(e) => handleFilterChange("category", e.target.value)}
+            className="w-full border border-gray-300 rounded-md px-3 py-2"
+          >
             <option value="">Бүгд</option>
-            <option value="Хөнгөн">Хөнгөн</option>
-            <option value="Дунд">Дунд</option>
-            <option value="Хүнд">Хүнд</option>
-            <option value="Маш хүнд">Маш хүнд</option>
+            {categories.map((category) => (
+              <option key={category} value={category}>{category}</option>
+            ))}
           </select>
         </div>
 
         <div className="w-60">
-          <label htmlFor="typeFilter" className="block text-sm font-medium text-gray-700 mb-1">
-            Төрөл
-          </label>
-          <select id="typeFilter" className="w-full border border-gray-300 rounded-md px-3 py-2">
+          <label htmlFor="difficultyFilter" className="block text-sm font-medium text-gray-700 mb-1">Түвшин</label>
+          <select
+            id="difficultyFilter"
+            value={filters.difficulty}
+            onChange={(e) => handleFilterChange("difficulty", e.target.value)}
+            className="w-full border border-gray-300 rounded-md px-3 py-2"
+          >
             <option value="">Бүгд</option>
-            <option value="select">Нэг сонголттой</option>
-            <option value="multiselect">Олон сонголттой</option>
-            <option value="text">Текст</option>
-            <option value="number">Тоон</option>
+            {difficulties.length > 0 ? difficulties.map((difficulty) => (
+              <option key={difficulty} value={difficulty}>{difficulty}</option>
+            )) : (
+              <>
+                <option value="Хөнгөн">Хөнгөн</option>
+                <option value="Дунд">Дунд</option>
+                <option value="Хүнд">Хүнд</option>
+                <option value="Маш хүнд">Маш хүнд</option>
+              </>
+            )}
+          </select>
+        </div>
+
+        <div className="w-60">
+          <label htmlFor="typeFilter" className="block text-sm font-medium text-gray-700 mb-1">Төрөл</label>
+          <select
+            id="typeFilter"
+            value={filters.type}
+            onChange={(e) => handleFilterChange("type", e.target.value)}
+            className="w-full border border-gray-300 rounded-md px-3 py-2"
+          >
+            <option value="">Бүгд</option>
+            <option value="">Нэг сонголттой</option>
+            <option value="">Олон сонголттой</option>
+            <option value="">Нөхөх</option>
           </select>
         </div>
       </div>
 
-      {/* Даалгаврын жагсаалт */}
       <div className="bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden">
         <div className="overflow-x-auto">
           <table className="min-w-full divide-y divide-gray-200">
             <thead className="bg-gray-50">
               <tr>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">#</th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Анги</th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Даалгавар
-                </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Сэдэв
-                </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Төрөл
-                </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Түвшин
-                </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Оноо</th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Үйлдэл
-                </th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">№</th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Анги</th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Даалгавар</th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Сэдэв</th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Төрөл</th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Түвшин</th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Оноо</th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Үйлдэл</th>
               </tr>
             </thead>
             <tbody className="bg-white divide-y divide-gray-200">
-              {questions.length > 0 ? (
-                questions.map((question, index) => (
-                  <tr key={question.id}>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{index + 1}</td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{question.className || "-"}</td>
-                    <td className="px-6 py-4 text-sm text-gray-900">{question.text}</td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{question.category || "-"}</td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                      {question.type === "select"
-                        ? "Нэг сонголттой"
-                        : question.type === "multiselect"
-                          ? "Олон сонголттой"
-                          : question.type === "text"
-                            ? "Текст"
-                            : question.type === "number"
-                              ? "Тоон"
-                              : question.type}
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{question.difficulty || "-"}</td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{question.points}</td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+              {isLoading ? (
+                <tr>
+                  <td colSpan={8} className="text-center py-4">Ачаалж байна...</td>
+                </tr>
+              ) : questions.length > 0 ? (
+                questions.map((q, i) => (
+                  <tr key={q.id}>
+                    <td className="px-6 py-4">{i + 1}</td>
+                    <td className="px-6 py-4">{q.className || "-"}</td>
+                    <td className="px-6 py-4">{q.text}</td>
+                    <td className="px-6 py-4">{q.category || "-"}</td>
+                    <td className="px-6 py-4">{q.type}</td>
+                    <td className="px-6 py-4">{q.difficulty}</td>
+                    <td className="px-6 py-4">{q.points}</td>
+                    <td className="px-6 py-4">
                       <div className="flex space-x-2">
-                        <Link
-                          href={`/teacher/question-bank/edit/${question.id}`}
-                          className="text-blue-600 hover:text-blue-900"
-                        >
+                        <Link href={`/teacher/question-bank/edit/${q.id}`} className="text-blue-600 hover:text-blue-900">
                           <Pencil size={18} />
                         </Link>
-                        <Link
-                          href={`/teacher/question-bank/delete/${question.id}`}
-                          className="text-red-600 hover:text-red-900"
-                        >
+                        <Link href={`/teacher/question-bank/delete/${q.id}`} className="text-red-600 hover:text-red-900">
                           <Trash2 size={18} />
                         </Link>
                       </div>
@@ -174,9 +181,7 @@ export default async function QuestionBank() {
                 ))
               ) : (
                 <tr>
-                  <td colSpan={8} className="px-6 py-4 text-center text-sm text-gray-500">
-                    Даалгавар олдсонгүй
-                  </td>
+                  <td colSpan={8} className="text-center py-4 text-gray-500">Асуулт олдсонгүй</td>
                 </tr>
               )}
             </tbody>

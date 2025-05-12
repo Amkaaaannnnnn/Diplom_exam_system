@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react"
 import { useRouter } from "next/navigation"
-import { Plus, Trash2 } from "lucide-react"
+import { Plus, Trash2, Search } from "lucide-react"
 
 export default function ExamForm({ exam = null }) {
   const router = useRouter()
@@ -16,6 +16,24 @@ export default function ExamForm({ exam = null }) {
   const [selectedBankQuestions, setSelectedBankQuestions] = useState([])
   const [filterClass, setFilterClass] = useState("")
   const [filterCategory, setFilterCategory] = useState("")
+  const [filterSubject, setFilterSubject] = useState("")
+
+  // Transform exam questions from examQuestions relation if needed
+  const getQuestionsFromExam = (examData) => {
+    if (!examData) return []
+
+    // If the exam has examQuestions relation, extract the questions
+    if (examData.examQuestions && Array.isArray(examData.examQuestions)) {
+      return examData.examQuestions.map((eq) => eq.question)
+    }
+
+    // If the exam has direct questions array, use that
+    if (examData.questions && Array.isArray(examData.questions)) {
+      return examData.questions
+    }
+
+    return []
+  }
 
   const [formData, setFormData] = useState({
     title: exam?.title || "",
@@ -26,7 +44,7 @@ export default function ExamForm({ exam = null }) {
     totalPoints: exam?.totalPoints || 100,
     examDate: exam?.examDate ? new Date(exam.examDate).toISOString().split("T")[0] : "",
     examTime: exam?.examTime || "09:00",
-    questions: exam?.questions || [],
+    questions: getQuestionsFromExam(exam) || [],
   })
 
   // Хичээлүүдийг татах
@@ -80,6 +98,10 @@ export default function ExamForm({ exam = null }) {
             params.append("category", filterCategory)
           }
 
+          if (filterSubject) {
+            params.append("subject", filterSubject)
+          }
+
           if (params.toString()) {
             url += `?${params.toString()}`
           }
@@ -98,7 +120,7 @@ export default function ExamForm({ exam = null }) {
 
       fetchQuestions()
     }
-  }, [showQuestionBank, filterClass, filterCategory])
+  }, [showQuestionBank, filterClass, filterCategory, filterSubject])
 
   const handleChange = (e) => {
     const { name, value } = e.target
@@ -126,6 +148,10 @@ export default function ExamForm({ exam = null }) {
           points: Number(q.points) || 1,
           options: q.options || [],
           correctAnswer: q.correctAnswer || "",
+          className: q.className || formData.className, // Ангийг шалгалтаас авах
+          category: q.category || "", // Сэдвийг хадгалах
+          // We'll still send subject even if it's not in the schema
+          subject: q.subject || formData.subject, // Хичээлийг шалгалтаас авах
         })),
       }
 
@@ -148,6 +174,7 @@ export default function ExamForm({ exam = null }) {
         } catch (jsonError) {
           console.error("JSON боловсруулахад алдаа гарлаа:", jsonError)
           console.error("API буцаасан хариу:", responseText)
+          setDetailedError(`API буцаасан хариу JSON биш байна: ${responseText}`)
           throw new Error("API буцаасан хариу JSON биш байна")
         }
       } catch (textError) {
@@ -157,9 +184,14 @@ export default function ExamForm({ exam = null }) {
 
       if (!response.ok) {
         console.error("API алдааны хариу:", data)
-        throw new Error(data.error || "Шалгалт үүсгэх үед алдаа гарлаа")
+        if (data && data.error) {
+          setDetailedError(data.details || "Дэлгэрэнгүй мэдээлэл байхгүй")
+          throw new Error(data.error)
+        }
+        throw new Error("Шалгалт үүсгэх үед алдаа гарлаа")
       }
 
+      // Амжилттай үүссэн бол шалгалтын жагсаалт руу буцах
       router.push("/teacher/exams")
       router.refresh()
     } catch (err) {
@@ -184,6 +216,9 @@ export default function ExamForm({ exam = null }) {
         { id: "D", text: "" },
       ],
       correctAnswer: "A",
+      className: formData.className, // Шалгалтын ангийг авах
+      subject: formData.subject, // Шалгалтын хичээлийг авах
+      category: "", // Сэдэв хоосон эхлэх
     }
 
     setFormData((prev) => ({
@@ -206,6 +241,21 @@ export default function ExamForm({ exam = null }) {
       ...prev,
       questions: prev.questions.map((q) => {
         if (q.id === questionId) {
+          // Хэрэв төрөл өөрчлөгдсөн бол зөв хариултыг дахин тохируулах
+          if (field === "type") {
+            let newCorrectAnswer = q.correctAnswer
+
+            if (value === "select") {
+              newCorrectAnswer = q.options && q.options.length > 0 ? q.options[0].id : "A"
+            } else if (value === "multiselect") {
+              newCorrectAnswer = []
+            } else if (value === "fill") {
+              newCorrectAnswer = ""
+            }
+
+            return { ...q, [field]: value, correctAnswer: newCorrectAnswer }
+          }
+
           return { ...q, [field]: value }
         }
         return q
@@ -231,6 +281,11 @@ export default function ExamForm({ exam = null }) {
   // Даалгаварын санг харуулах/нуух
   const toggleQuestionBank = () => {
     setShowQuestionBank(!showQuestionBank)
+    // Шалгалтын хичээл, ангийг шүүлтүүрт оноох
+    if (!showQuestionBank) {
+      setFilterClass(formData.className)
+      setFilterSubject(formData.subject)
+    }
   }
 
   // Даалгаварын сангаас даалгавар сонгох
@@ -244,14 +299,25 @@ export default function ExamForm({ exam = null }) {
 
   // Сонгосон даалгавруудыг шалгалтад нэмэх
   const addSelectedQuestionsToExam = () => {
-    const newQuestions = selectedBankQuestions.map((q) => ({
-      id: q.id,
-      text: q.text,
-      type: q.type,
-      points: q.points,
-      options: q.options,
-      correctAnswer: q.correctAnswer,
-    }))
+    const newQuestions = selectedBankQuestions.map((q) => {
+      // Хуучин төрлүүдийг шинэ төрлүүдэд хөрвүүлэх
+      let newType = q.type
+      if (q.type === "text" || q.type === "number") {
+        newType = "fill"
+      }
+
+      return {
+        id: q.id,
+        text: q.text,
+        type: newType,
+        points: q.points,
+        options: q.options,
+        correctAnswer: q.correctAnswer,
+        className: q.className || formData.className, // Ангийг хадгалах
+        category: q.category || "", // Сэдвийг хадгалах
+        subject: q.subject || formData.subject, // Хичээлийг хадгалах
+      }
+    })
 
     setFormData((prev) => ({
       ...prev,
@@ -260,6 +326,24 @@ export default function ExamForm({ exam = null }) {
 
     setSelectedBankQuestions([])
     setShowQuestionBank(false)
+  }
+
+  // Төрлийн нэрийг Монгол хэлээр харуулах
+  const getTypeDisplayName = (type) => {
+    switch (type) {
+      case "select":
+        return "Нэг сонголттой"
+      case "multiselect":
+        return "Олон сонголттой"
+      case "fill":
+        return "Нөхөх"
+      case "text":
+        return "Текст (Нөхөх)"
+      case "number":
+        return "Тоон (Нөхөх)"
+      default:
+        return type
+    }
   }
 
   return (
@@ -412,6 +496,7 @@ export default function ExamForm({ exam = null }) {
               onClick={toggleQuestionBank}
               className="bg-green-500 hover:bg-green-600 text-white px-4 py-2 rounded-md flex items-center"
             >
+              <Search size={18} className="mr-1" />
               Даалгаврын сангаас сонгох
             </button>
             <button
@@ -445,6 +530,27 @@ export default function ExamForm({ exam = null }) {
                   <option value="8">8-р анги</option>
                   <option value="9">9-р анги</option>
                   <option value="10">10-р анги</option>
+                  <option value="11">11-р анги</option>
+                  <option value="12">12-р анги</option>
+                </select>
+              </div>
+
+              <div className="w-60">
+                <label htmlFor="bankSubjectFilter" className="block text-sm font-medium text-gray-700 mb-1">
+                  Хичээл
+                </label>
+                <select
+                  id="bankSubjectFilter"
+                  value={filterSubject}
+                  onChange={(e) => setFilterSubject(e.target.value)}
+                  className="w-full border border-gray-300 rounded-md px-3 py-2"
+                >
+                  <option value="">Бүгд</option>
+                  {subjects.map((subject) => (
+                    <option key={subject.id} value={subject.name}>
+                      {subject.name}
+                    </option>
+                  ))}
                 </select>
               </div>
 
@@ -470,6 +576,12 @@ export default function ExamForm({ exam = null }) {
                     <th className="w-10 px-3 py-2"></th>
                     <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                       Даалгавар
+                    </th>
+                    <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      Анги
+                    </th>
+                    <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      Сэдэв
                     </th>
                     <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                       Төрөл
@@ -498,21 +610,15 @@ export default function ExamForm({ exam = null }) {
                           />
                         </td>
                         <td className="px-3 py-2 text-sm">{question.text}</td>
-                        <td className="px-3 py-2 text-sm">
-                          {question.type === "select"
-                            ? "Нэг сонголттой"
-                            : question.type === "multiselect"
-                              ? "Олон сонголттой"
-                              : question.type === "text"
-                                ? "Текст"
-                                : "Тоон"}
-                        </td>
+                        <td className="px-3 py-2 text-sm">{question.className || "-"}</td>
+                        <td className="px-3 py-2 text-sm">{question.category || "-"}</td>
+                        <td className="px-3 py-2 text-sm">{getTypeDisplayName(question.type)}</td>
                         <td className="px-3 py-2 text-sm">{question.points}</td>
                       </tr>
                     ))
                   ) : (
                     <tr>
-                      <td colSpan={4} className="px-3 py-2 text-center text-sm text-gray-500">
+                      <td colSpan={6} className="px-3 py-2 text-center text-sm text-gray-500">
                         Даалгавар олдсонгүй
                       </td>
                     </tr>
@@ -563,7 +669,7 @@ export default function ExamForm({ exam = null }) {
                     ></textarea>
                   </div>
 
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                     <div>
                       <label className="block text-sm font-medium text-gray-700 mb-1">Төрөл</label>
                       <select
@@ -574,8 +680,7 @@ export default function ExamForm({ exam = null }) {
                       >
                         <option value="select">Нэг сонголттой</option>
                         <option value="multiselect">Олон сонголттой</option>
-                        <option value="text">Текст</option>
-                        <option value="number">Тоон</option>
+                        <option value="fill">Нөхөх</option>
                       </select>
                     </div>
 
@@ -588,6 +693,17 @@ export default function ExamForm({ exam = null }) {
                         min="1"
                         className="w-full border border-gray-300 rounded-md px-3 py-2"
                         required
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Сэдэв</label>
+                      <input
+                        type="text"
+                        value={question.category || ""}
+                        onChange={(e) => updateQuestion(question.id, "category", e.target.value)}
+                        className="w-full border border-gray-300 rounded-md px-3 py-2"
+                        placeholder="Сэдэв оруулах"
                       />
                     </div>
                   </div>
@@ -612,7 +728,8 @@ export default function ExamForm({ exam = null }) {
                             <div className="flex items-center">
                               <input
                                 type={question.type === "select" ? "radio" : "checkbox"}
-                                name={`correctAnswer_${question.id}`}
+                                name={`correctAnswer_${question.id}` ? "radio" : "checkbox"}
+                                
                                 checked={
                                   question.type === "select"
                                     ? question.correctAnswer === option.id
@@ -642,28 +759,13 @@ export default function ExamForm({ exam = null }) {
                     </div>
                   )}
 
-                  {question.type === "text" && (
+                  {question.type === "fill" && (
                     <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">Зөв хариулт (текст)</label>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Зөв хариулт (нөхөх)</label>
                       <input
                         type="text"
                         value={question.correctAnswer || ""}
                         onChange={(e) => updateQuestion(question.id, "correctAnswer", e.target.value)}
-                        className="w-full border border-gray-300 rounded-md px-3 py-2"
-                        required
-                      />
-                    </div>
-                  )}
-
-                  {question.type === "number" && (
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">Зөв хариулт (тоо)</label>
-                      <input
-                        type="number"
-                        value={question.correctAnswer || ""}
-                        onChange={(e) =>
-                          updateQuestion(question.id, "correctAnswer", Number.parseFloat(e.target.value))
-                        }
                         className="w-full border border-gray-300 rounded-md px-3 py-2"
                         required
                       />

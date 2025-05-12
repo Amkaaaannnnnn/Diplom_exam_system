@@ -7,9 +7,12 @@ import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
 import { Eye, EyeOff } from "lucide-react"
 
-export default function StudentSettings() {
+export default function TeacherSettings() {
   const router = useRouter()
   const [user, setUser] = useState(null)
+  const [showPassword, setShowPassword] = useState(false)
+  const [showNewPassword, setShowNewPassword] = useState(false)
+
   const [formData, setFormData] = useState({
     name: "",
     username: "",
@@ -18,8 +21,6 @@ export default function StudentSettings() {
     currentPassword: "",
     newPassword: ""
   })
-    const [showCurrentPassword, setShowCurrentPassword] = useState(false)
-  const [showNewPassword, setShowNewPassword] = useState(false)
 
   useEffect(() => {
     const fetchUser = async () => {
@@ -77,7 +78,6 @@ export default function StudentSettings() {
       <Card className="shadow-lg border border-gray-200">
         <CardContent className="p-8">
           <div className="flex items-center gap-4 mb-8">
-
             <h1 className="text-3xl font-bold text-gray-800">Үндсэн мэдээлэл</h1>
           </div>
 
@@ -95,13 +95,24 @@ export default function StudentSettings() {
                 <label className="block text-sm font-medium text-gray-700 mb-1">Регистр</label>
                 <Input name="register" value={formData.register} onChange={handleChange} placeholder="Регистр" />
               </div>
-
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">И-мэйл</label>
-                <Input name="email" value={formData.email} onChange={handleChange} placeholder="И-мэйл" />
+                <Input name="email" value={formData.email} onChange={handleChange} placeholder="Email" />
               </div>
-
-               <div className="md:col-span-2 relative">
+              <div className="md:col-span-2 relative">
+                <label className="block text-sm font-medium text-gray-700 mb-1">Одоогийн нууц үг</label>
+                <Input
+                  name="currentPassword"
+                  type={showPassword ? "text" : "password"}
+                  value={formData.currentPassword}
+                  onChange={handleChange}
+                  placeholder="Одоогийн нууц үг"
+                />
+                <button type="button" onClick={() => setShowPassword(!showPassword)} className="absolute right-3 top-9 text-gray-500">
+                  {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
+                </button>
+              </div>
+              <div className="md:col-span-2 relative">
                 <label className="block text-sm font-medium text-gray-700 mb-1">Шинэ нууц үг</label>
                 <Input
                   name="newPassword"

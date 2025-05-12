@@ -14,7 +14,7 @@ export default async function StudentsList() {
     redirect("/login")
   }
 
-  // Багшийн хичээлийн сурагчдыг татах
+
   const students = await prisma.user.findMany({
     where: {
       role: "student",
@@ -24,7 +24,7 @@ export default async function StudentsList() {
     },
   })
 
-  // Ангиар бүлэглэх
+
   const studentsByClass = {}
   students.forEach((student) => {
     if (!studentsByClass[student.className]) {

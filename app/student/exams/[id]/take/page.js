@@ -22,16 +22,33 @@ export default function ExamTakingPage({ params }) {
           throw new Error("Failed to load exam")
         }
         const examData = await response.json()
+
+        // Хуучин төрлүүдийг шинэ төрлүүдэд хөрвүүлэх
+        if (examData.examQuestions) {
+          // Make sure we're working with examQuestions instead of questions
+          const questions = examData.examQuestions.map((eq) => {
+            const question = eq.question || eq
+            if (question.type === "text" || question.type === "number") {
+              return { ...question, type: "fill" }
+            }
+            return question
+          })
+          examData.questions = questions
+        }
+
         setExam(examData)
         setTimeLeft(examData.duration * 60) // Convert minutes to seconds
 
         // Initialize answers object
         const initialAnswers = {}
-        examData.questions.forEach((question) => {
+        // Make sure we're using the right property
+        const questions = examData.questions || examData.examQuestions?.map((eq) => eq.question) || []
+        questions.forEach((question) => {
           initialAnswers[question.id] = null
         })
         setAnswers(initialAnswers)
       } catch (err) {
+        console.error("Error fetching exam:", err)
         setError(err.message)
       } finally {
         setLoading(false)
@@ -103,11 +120,12 @@ export default function ExamTakingPage({ params }) {
 
       if (response.ok) {
         // Redirect to the result page
-        router.push(`/student/results/${result.resultId}`)
+        router.push(`/student/results/${result.id || result.resultId}`)
       } else {
         setError(result.error || "Шалгалт явуулахад алдаа гарлаа")
       }
     } catch (err) {
+      console.error("Error submitting exam:", err)
       setError("Шалгалт явуулахад алдаа гарлаа: " + err.message)
     } finally {
       setSubmitting(false)
@@ -163,6 +181,9 @@ export default function ExamTakingPage({ params }) {
     )
   }
 
+  // Make sure we're using the right property
+  const questions = exam.questions || exam.examQuestions?.map((eq) => eq.question) || []
+
   return (
     <div className="p-6">
       <div className="max-w-4xl mx-auto">
@@ -178,7 +199,7 @@ export default function ExamTakingPage({ params }) {
           </div>
 
           <div className="space-y-6">
-            {exam.questions.map((question, index) => (
+            {questions.map((question, index) => (
               <div key={question.id} className="border rounded-lg p-4">
                 <p className="font-medium mb-3">
                   {index + 1}. {question.text} ({question.points} оноо)
@@ -203,22 +224,35 @@ export default function ExamTakingPage({ params }) {
                   </div>
                 )}
 
-                {question.type === "text" && (
-                  <div className="ml-4">
-                    <input
-                      type="text"
-                      value={answers[question.id] || ""}
-                      onChange={(e) => handleAnswerChange(question.id, e.target.value)}
-                      placeholder="Хариултаа энд бичнэ үү"
-                      className="w-full p-2 border rounded"
-                    />
+                {question.type === "multiselect" && question.options && (
+                  <div className="space-y-2 ml-4">
+                    {JSON.parse(JSON.stringify(question.options)).map((option) => (
+                      <div key={option.id} className="flex items-center">
+                        <input
+                          type="checkbox"
+                          id={`${question.id}-${option.id}`}
+                          name={`${question.id}-${option.id}`}
+                          value={option.id}
+                          checked={Array.isArray(answers[question.id]) && answers[question.id].includes(option.id)}
+                          onChange={() => {
+                            const currentAnswers = Array.isArray(answers[question.id]) ? answers[question.id] : []
+                            const newAnswers = currentAnswers.includes(option.id)
+                              ? currentAnswers.filter((id) => id !== option.id)
+                              : [...currentAnswers, option.id]
+                            handleAnswerChange(question.id, newAnswers)
+                          }}
+                          className="mr-2"
+                        />
+                        <label htmlFor={`${question.id}-${option.id}`}>{option.text}</label>
+                      </div>
+                    ))}
                   </div>
                 )}
 
-                {question.type === "number" && (
+                {question.type === "fill" && (
                   <div className="ml-4">
                     <input
-                      type="number"
+                      type="text"
                       value={answers[question.id] || ""}
                       onChange={(e) => handleAnswerChange(question.id, e.target.value)}
                       placeholder="Хариултаа энд бичнэ үү"

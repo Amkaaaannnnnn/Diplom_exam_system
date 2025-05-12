@@ -2,6 +2,14 @@ import { NextResponse } from "next/server"
 import { prisma } from "@/lib/prisma"
 import { getCurrentUser } from "@/lib/auth"
 
+function normalizeClassName(className) {
+  // Remove any non-numeric characters (like 'a', 'б', etc.) from class names
+  if (typeof className === "string") {
+    return className.replace(/[^0-9]/g, "")
+  }
+  return className
+}
+
 // Бүх даалгаваруудыг авах
 export async function GET(req) {
   try {
@@ -65,8 +73,8 @@ export async function GET(req) {
 
     return NextResponse.json(questions)
   } catch (error) {
-    console.error("Даалгаваруудыг татахад алдаа гарлаа:", error)
-    return NextResponse.json({ error: "Даалгаваруудыг татах үед алдаа гарлаа" }, { status: 500 })
+    console.error("Асуулт татахад алдаа гарлаа:", error)
+    return NextResponse.json({ error: "Асуулт татах үед алдаа гарлаа" }, { status: 500 })
   }
 }
 
@@ -87,26 +95,31 @@ export async function POST(req) {
       return NextResponse.json({ error: "Шаардлагатай талбарууд дутуу байна" }, { status: 400 })
     }
 
+    const questionData = {
+      text,
+      type,
+      points: Number(points) || 1,
+      options,
+      correctAnswer,
+      className: normalizeClassName(className), // Normalize class name
+      category,
+      difficulty: difficulty || null,
+      userId: currentUser.id,
+      isInBank: isInBank !== false,
+    }
+
+    console.log("Creating question with data:", questionData)
+
     // Даалгавар үүсгэх
     const question = await prisma.question.create({
-      data: {
-        text,
-        type,
-        points: points || 1,
-        options,
-        correctAnswer,
-        className,
-        category,
-        difficulty,
-        isInBank,
-        userId: currentUser.id,
-      },
+      data: questionData,
     })
+
+    console.log("Question created successfully:", question.id)
 
     return NextResponse.json(question, { status: 201 })
   } catch (error) {
-    console.error("Даалгавар үүсгэхэд алдаа гарлаа:", error)
-    return NextResponse.json({ error: "Даалгавар үүсгэх үед алдаа гарлаа" }, { status: 500 })
+    console.error("Асуулт үүсгэхэд алдаа гарлаа:", error)
+    return NextResponse.json({ error: "Асуулт үүсгэх үед алдаа гарлаа", details: error.message }, { status: 500 })
   }
 }
-

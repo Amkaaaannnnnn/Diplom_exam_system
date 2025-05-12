@@ -13,7 +13,7 @@ export async function POST(req, { params }) {
     }
 
     // Fetch the result with exam data
-    const result = await prisma.examResult.findUnique({
+    const result = await prisma.result.findUnique({
       where: { id: resultId },
       include: {
         exam: true,

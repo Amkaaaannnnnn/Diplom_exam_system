@@ -3,9 +3,9 @@ import "./globals.css"
 import type { Metadata } from "next"
 
 export const metadata: Metadata = {
-  title: "School Management System",
-  description: "A comprehensive school management system",
-    generator: 'v0.dev'
+  title: "Exam system",
+  description: "Exam system for students",
+    generator: 'amka'
 }
 
 export default function RootLayout({
