@@ -144,7 +144,7 @@ export default function QuestionBankPage() {
               <tr>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">№</th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Анги</th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Даалгавар</th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Асуулт</th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Сэдэв</th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Төрөл</th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Түвшин</th>

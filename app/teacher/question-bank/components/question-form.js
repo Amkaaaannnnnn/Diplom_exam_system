@@ -168,7 +168,7 @@ export default function QuestionForm({ question = null }) {
 
       if (!response.ok) {
         const data = await response.json()
-        throw new Error(data.error || "Даалгавар хадгалахад алдаа гарлаа")
+        throw new Error(data.error || "Асуулт хадгалахад алдаа гарлаа")
       }
 
       router.push("/teacher/question-bank")
